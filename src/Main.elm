@@ -6,7 +6,7 @@ import Html exposing (Attribute, Html, button, div, span, text)
 import Html.Attributes as HA exposing (class, style)
 import Html.Events as HE exposing (onClick)
 import Svg exposing (Svg)
-import Svg.Attributes
+import Svg.Attributes as SA
 
 
 main : Program () Model Msg
@@ -57,11 +57,26 @@ view model =
         , div
             [ padding "1rem"
             , style "display" "inline-block"
+            , style "position" "relative"
             ]
             [ viewGrid
+            , Svg.svg
+                [ SA.viewBox "0 0 400 400"
+                , style "position" "absolute"
+                , style "inset" "0"
+                ]
+                [ viewConnection ( 0, 0 ) ( 1, 0 ) ]
             ]
         , text "V3 render tile connections"
         ]
+
+
+viewConnection p1 p2 =
+    let
+        points =
+            [ p1, p2 ] |> List.map (\( x, y ) -> ( x * 100 + 50, y * 100 + 50 ))
+    in
+    text ""
 
 
 viewGrid =
