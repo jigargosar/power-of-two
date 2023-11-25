@@ -1,4 +1,4 @@
-module Main exposing (main)
+module MainV2 exposing (main)
 
 import Browser
 import Browser.Events as BE
@@ -45,8 +45,16 @@ update msg model =
             ( model, Cmd.none )
 
 
+paddingMedium =
+    style "padding" "0.5rem"
+
+
 padding =
     style "padding"
+
+
+borderRadiusSmall =
+    style "border-radius" "0.5rem"
 
 
 view : Model -> Html Msg
@@ -60,11 +68,18 @@ view model =
             ]
             [ viewGrid
             ]
-        , text "V3 render tile connections"
+        , text "V2 simple html/css grid rendering"
         ]
 
 
 viewGrid =
+    let
+        paddingCommon =
+            style "padding" "0.25rem"
+
+        borderRadiusCommon =
+            style "border-radius" "0.5rem"
+    in
     div
         [ style "" ""
         , style "display" "inline-grid"
