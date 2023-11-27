@@ -61,11 +61,21 @@ view model =
             ]
             [ viewGrid
             , Svg.svg
-                [ SA.viewBox "0 0 400 400"
+                [ SA.viewBox "-0.5 -0.5 4 4"
                 , style "position" "absolute"
                 , style "inset" "0"
+                , style "fill" "none"
+                , style "pointer-events" "none"
                 ]
-                [ viewConnection ( 0, 0 ) ( 1, 0 ) ]
+                [ Svg.polyline
+                    [ SA.points "0,0 1,1 2,1 2,0"
+                    , SA.stroke "#666"
+                    , SA.strokeWidth "0.04"
+                    , style "animation" "1300ms ease-in 0s 1 normal both running vanish-stroke"
+                    ]
+                    []
+                , viewConnection ( 0, 0 ) ( 1, 0 )
+                ]
             ]
         , text "V3 render tile connections"
         ]
@@ -96,6 +106,14 @@ viewGrid =
                     , style "background-color" "#111"
                     , style "place-content" "center"
                     , style "border-radius" "0.5rem"
+
+                    -- , style "transition" "scale 300ms ease-in"
+                    -- , style "scale" "1"
+                    , if List.member i [ 1, 6, 7, 3 ] then
+                        style "animation" "1300ms ease-in 0s 1 normal both running vanish"
+
+                      else
+                        style "" ""
                     ]
                     [ text (String.fromInt i) ]
             )
@@ -118,4 +136,7 @@ globalStyles =
 
 body{ margin:0; height:100%; }
 
+@keyframes vanish-stroke { to{stroke-width:0;}}
+@keyframes vanish { to{scale:0;}
+}
     """ ]
