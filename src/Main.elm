@@ -3,7 +3,7 @@ module Main exposing (main)
 import Browser
 import Browser.Events as BE
 import Html exposing (Attribute, Html, button, div, span, text)
-import Html.Attributes as HA exposing (class, style)
+import Html.Attributes as HA exposing (attribute, class, style)
 import Html.Events as HE exposing (onClick)
 import Svg exposing (Svg)
 import Svg.Attributes as SA
@@ -84,18 +84,31 @@ viewCells =
         (List.map
             (\i ->
                 div
-                    [ style "" ""
+                    [ attribute "style"
+                        ([ if List.member i [ 1 ] then
+                            "--drop-down-diff:2"
+
+                           else
+                            ""
+                         , if List.member i [ 2 ] then
+                            "--drop-down-diff:1"
+
+                           else
+                            ""
+                         ]
+                            |> String.join ";"
+                        )
                     , style "display" "grid"
                     , style "background-color" "#111"
                     , style "place-content" "center"
                     , style "border-radius" "0.5rem"
-                    , if List.member i [ 1, 6, 7, 3 ] then
+                    , if List.member i [ 9, 5, 6, 7, 3 ] then
                         style "animation" "1000ms ease-in 0s 1 normal both running vanish"
 
                       else
                         style "" ""
-                    , if List.member i [ 2 ] then
-                        style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-one-cell"
+                    , if List.member i [ 1, 2 ] then
+                        style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-cell"
 
                       else
                         style "" ""
@@ -115,7 +128,7 @@ viewConnections =
         , style "pointer-events" "none"
         ]
         [ Svg.polyline
-            [ SA.points "0,0 1,1 2,1 2,0"
+            [ SA.points "0,2 0,1 1,1 2,1 2,0"
             , SA.stroke "#666"
             , SA.strokeWidth "0.04"
             , style "animation" "1000ms ease-in 0s 1 normal both running vanish-stroke"
@@ -141,7 +154,9 @@ body{ margin:0; height:100%; }
 
 @keyframes vanish-stroke { to{stroke-width:0;}}
 @keyframes vanish { to{scale:0;} }
-@keyframes drop-down-one-cell { to{translate:0 110%;} }
+@keyframes drop-down-cell { 
+    to{translate:0 calc( (100% + 0.5rem) * var(--drop-down-diff,0));} 
+}
 
 
     """ ]
