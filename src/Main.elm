@@ -84,7 +84,8 @@ viewCells =
         (List.map
             (\i ->
                 div
-                    [ style "display" "grid"
+                    [ style "" ""
+                    , style "display" "grid"
                     , style "background-color" "#111"
                     , style "place-content" "center"
                     , style "border-radius" "0.5rem"
