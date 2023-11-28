@@ -54,42 +54,24 @@ view model =
     div
         []
         [ globalStyles
-        , div
-            [ padding "1rem"
-            , style "display" "inline-block"
-            , style "position" "relative"
-            ]
-            [ viewGrid
-            , Svg.svg
-                [ SA.viewBox "-0.5 -0.5 4 4"
-                , style "position" "absolute"
-                , style "inset" "0"
-                , style "fill" "none"
-                , style "pointer-events" "none"
-                ]
-                [ Svg.polyline
-                    [ SA.points "0,0 1,1 2,1 2,0"
-                    , SA.stroke "#666"
-                    , SA.strokeWidth "0.04"
-                    , style "animation" "1300ms ease-in 0s 1 normal both running vanish-stroke"
-                    ]
-                    []
-                , viewConnection ( 0, 0 ) ( 1, 0 )
-                ]
-            ]
-        , text "V3 render tile connections"
+        , viewGrid
+        , text "V5 drop tile animation"
         ]
 
 
-viewConnection p1 p2 =
-    let
-        points =
-            [ p1, p2 ] |> List.map (\( x, y ) -> ( x * 100 + 50, y * 100 + 50 ))
-    in
-    text ""
-
-
 viewGrid =
+    div
+        [ padding "1rem"
+        , style "display" "inline-block"
+        , style "position" "relative"
+        ]
+        [ text ""
+        , viewConnections
+        , viewCells
+        ]
+
+
+viewCells =
     div
         [ style "" ""
         , style "display" "inline-grid"
@@ -106,11 +88,13 @@ viewGrid =
                     , style "background-color" "#111"
                     , style "place-content" "center"
                     , style "border-radius" "0.5rem"
-
-                    -- , style "transition" "scale 300ms ease-in"
-                    -- , style "scale" "1"
                     , if List.member i [ 1, 6, 7, 3 ] then
-                        style "animation" "1300ms ease-in 0s 1 normal both running vanish"
+                        style "animation" "1000ms ease-in 0s 1 normal both running vanish"
+
+                      else
+                        style "" ""
+                    , if List.member i [ 2 ] then
+                        style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-one-cell"
 
                       else
                         style "" ""
@@ -119,6 +103,24 @@ viewGrid =
             )
             (List.range 1 16)
         )
+
+
+viewConnections =
+    Svg.svg
+        [ SA.viewBox "-0.5 -0.5 4 4"
+        , style "position" "absolute"
+        , style "inset" "0"
+        , style "fill" "none"
+        , style "pointer-events" "none"
+        ]
+        [ Svg.polyline
+            [ SA.points "0,0 1,1 2,1 2,0"
+            , SA.stroke "#666"
+            , SA.strokeWidth "0.04"
+            , style "animation" "1000ms ease-in 0s 1 normal both running vanish-stroke"
+            ]
+            []
+        ]
 
 
 globalStyles =
@@ -137,6 +139,8 @@ globalStyles =
 body{ margin:0; height:100%; }
 
 @keyframes vanish-stroke { to{stroke-width:0;}}
-@keyframes vanish { to{scale:0;}
-}
+@keyframes vanish { to{scale:0;} }
+@keyframes drop-down-one-cell { to{translate:0 110%;} }
+
+
     """ ]
