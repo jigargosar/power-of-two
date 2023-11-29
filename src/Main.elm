@@ -61,25 +61,59 @@ view model =
 
 viewGrid =
     div
-        [ padding "1rem"
-        , style "display" "inline-block"
-        , style "position" "relative"
+        [ style "display" "inline-block"
+        , padding "1rem"
         ]
-        [ text ""
-        , viewConnections
-        , viewCells
+        [ div
+            [ style "background-color" "#333"
+            , style "border-radius" "0.5rem"
+            , style "position" "relative"
+            ]
+            [ text ""
+            , viewConnections
+            , viewCells
+            , viewNewCells
+            ]
         ]
+
+
+viewNewCells =
+    div
+        [ style "" ""
+        , style "display" "grid"
+        , style "grid-template" "repeat(4, 100px)/ repeat(4,100px)"
+        , style "padding" "0.5rem"
+        , style "gap" "0.5rem"
+        , style "position" "absolute"
+        , style "inset" "0"
+        ]
+        (List.map
+            (\i ->
+                div
+                    [ style "opacity" "0"
+                    , style "display" "grid"
+                    , style "background-color" "#111"
+                    , style "place-content" "center"
+                    , style "border-radius" "0.5rem"
+                    , if List.member i [ 1, 2, 3, 5, 7 ] then
+                        style "animation" "1000ms ease-out 1000ms 1 normal both running appear-from-top"
+
+                      else
+                        style "" ""
+                    ]
+                    [ text (String.fromInt i) ]
+            )
+            (List.range 1 16)
+        )
 
 
 viewCells =
     div
         [ style "" ""
-        , style "display" "inline-grid"
-        , style "background-color" "#333"
+        , style "display" "grid"
         , style "grid-template" "repeat(4, 100px)/ repeat(4,100px)"
         , style "padding" "0.5rem"
         , style "gap" "0.5rem"
-        , style "border-radius" "0.5rem"
         ]
         (List.map
             (\i ->
@@ -156,6 +190,13 @@ body{ margin:0; height:100%; }
 @keyframes vanish { to{scale:0;} }
 @keyframes drop-down-cell { 
     to{translate:0 calc( (100% + 0.5rem) * var(--drop-down-diff,0));} 
+}
+@keyframes appear-from-top { 
+    from{
+        opacity:1;
+        translate:0 calc( -1 * (100% + 0.5rem) * var(--appear-from-top-diff,2));
+    }
+    to{ opacity:1;}
 }
 
 
