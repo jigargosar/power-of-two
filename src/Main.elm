@@ -55,7 +55,7 @@ view model =
         []
         [ globalStyles
         , viewGrid
-        , text "V5 drop tile animation"
+        , text "V6 merge tile animation"
         ]
 
 
@@ -72,7 +72,8 @@ viewGrid =
             [ text ""
             , viewConnections
             , viewCells
-            , viewNewCells
+
+            -- , viewNewCells
             ]
         ]
 
@@ -141,11 +142,11 @@ viewCells =
 
                       else
                         style "" ""
-                    , if List.member i [ 1, 2 ] then
-                        style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-cell"
 
-                      else
-                        style "" ""
+                    -- , if List.member i [ 1, 2 ] then
+                    --     style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-cell"
+                    --   else
+                    --     style "" ""
                     ]
                     [ text (String.fromInt i) ]
             )
