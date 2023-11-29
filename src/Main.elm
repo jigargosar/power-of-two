@@ -137,7 +137,7 @@ viewCells =
                     , style "background-color" "#111"
                     , style "place-content" "center"
                     , style "border-radius" "0.5rem"
-                    , if List.member i [ 9, 5, 6, 7, 3 ] then
+                    , if List.member i [ 5, 6, 7, 3 ] then
                         style "animation" "1000ms ease-in 0s 1 normal both running vanish"
 
                       else
@@ -166,7 +166,12 @@ viewConnections =
             [ SA.points "0,2 0,1 1,1 2,1 2,0"
             , SA.stroke "#666"
             , SA.strokeWidth "0.04"
-            , style "animation" "1000ms ease-in 0s 1 normal both running vanish-stroke"
+            , SA.pathLength "1"
+            , style "stroke-dasharray" "1"
+            , style "stroke-dashoffset" "0"
+            , style "stroke-dashoffset" "-1"
+            , style "transition" "all 1s"
+            , style "animation" "1s ease-in 0s 1 normal both running collapse-stroke"
             ]
             []
         ]
@@ -188,6 +193,10 @@ globalStyles =
 body{ margin:0; height:100%; }
 
 @keyframes vanish-stroke { to{stroke-width:0;}}
+@keyframes collapse-stroke { 
+    from{stroke-dashoffset:0;}
+    to{stroke-dashoffset:-1;}
+}
 @keyframes vanish { to{scale:0;} }
 @keyframes drop-down-cell { 
     to{translate:0 calc( (100% + 0.5rem) * var(--drop-down-diff,0));} 
