@@ -118,36 +118,56 @@ viewCells =
         ]
         (List.map
             (\i ->
+                let
+                    styleLookup =
+                        [ ( 9
+                          , ( [ "--diff-y:-1" ]
+                            , [ style "animation" "calc(1000ms/4) linear 0s 1 normal both running slide-for-merge"
+                              ]
+                            )
+                          )
+                        , ( 5
+                          , ( [ "--diff-x:1" ]
+                            , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 1) 1 normal both running slide-for-merge"
+                              ]
+                            )
+                          )
+                        , ( 6
+                          , ( [ "--diff-x:1" ]
+                            , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 2) 1 normal both running slide-for-merge"
+                              ]
+                            )
+                          )
+                        , ( 7
+                          , ( [ "--diff-y:-1" ]
+                            , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 3) 1 normal both running slide-for-merge"
+                              ]
+                            )
+                          )
+                        ]
+
+                    ( computedCssVars, computedStyles ) =
+                        styleLookup
+                            |> List.filter (Tuple.first >> (\n -> n == i))
+                            |> List.head
+                            |> Maybe.map Tuple.second
+                            |> Maybe.withDefault ( [], [] )
+                in
                 div
-                    [ attribute "style"
-                        ([ if List.member i [ 1 ] then
-                            "--drop-down-diff:2"
-
-                           else
-                            ""
-                         , if List.member i [ 2 ] then
-                            "--drop-down-diff:1"
-
-                           else
-                            ""
-                         ]
-                            |> String.join ";"
-                        )
-                    , style "display" "grid"
-                    , style "background-color" "#111"
-                    , style "place-content" "center"
-                    , style "border-radius" "0.5rem"
-                    , if List.member i [ 5, 6, 7, 3 ] then
+                    ([ attribute "style" (computedCssVars |> String.join ";")
+                     , style "display" "grid"
+                     , style "background-color" "#111"
+                     , style "place-content" "center"
+                     , style "border-radius" "0.5rem"
+                     , style "z-index" "1"
+                     , if List.member i [ 5, 6, 7 ] then
                         style "animation" "1000ms ease-in 0s 1 normal both running vanish"
 
-                      else
+                       else
                         style "" ""
-
-                    -- , if List.member i [ 1, 2 ] then
-                    --     style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-cell"
-                    --   else
-                    --     style "" ""
-                    ]
+                     ]
+                        ++ computedStyles
+                    )
                     [ text (String.fromInt i) ]
             )
             (List.range 1 16)
@@ -171,7 +191,7 @@ viewConnections =
             , style "stroke-dashoffset" "0"
             , style "stroke-dashoffset" "-1"
             , style "transition" "all 1s"
-            , style "animation" "1s ease-in 0s 1 normal both running collapse-stroke"
+            , style "animation" "1s linear 0s 1 normal both running collapse-stroke"
             ]
             []
         ]
@@ -198,15 +218,28 @@ body{ margin:0; height:100%; }
     to{stroke-dashoffset:-1;}
 }
 @keyframes vanish { to{scale:0;} }
+
 @keyframes drop-down-cell { 
     to{translate:0 calc( (100% + 0.5rem) * var(--drop-down-diff,0));} 
 }
+
 @keyframes appear-from-top { 
     from{
         opacity:1;
         translate:0 calc( -1 * (100% + 0.5rem) * var(--appear-from-top-diff,2));
     }
     to{ opacity:1;}
+}
+
+@keyframes slide-for-merge { 
+    from{opacity:1;}
+    to{
+        translate: calc( (100% + 0.5rem) * var(--diff-x,0))
+                   calc( (100% + 0.5rem) * var(--diff-y,0)) ;
+
+        opacity:1;
+        visibility:hidden;
+    }
 }
 
 
