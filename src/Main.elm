@@ -139,7 +139,7 @@ viewCells =
                             )
                           )
                         , ( 7
-                          , ( [ "--diff-y:-1" ]
+                          , ( [ "--diff-x:1", "--diff-y:-1" ]
                             , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 3) 1 normal both running slide-for-merge"
                               ]
                             )
@@ -183,7 +183,7 @@ viewConnections =
         , style "pointer-events" "none"
         ]
         [ Svg.polyline
-            [ SA.points "0,2 0,1 1,1 2,1 2,0"
+            [ SA.points "0,2 0,1 1,1 2,1 3,0"
             , SA.stroke "#666"
             , SA.strokeWidth "0.04"
             , SA.pathLength "1"
