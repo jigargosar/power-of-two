@@ -52,16 +52,20 @@ padding =
 view : Model -> Html Msg
 view model =
     div
-        []
+        [ style "display" "flex"
+        , style "flex-direction" "column"
+        ]
         [ globalStyles
-        , viewGrid
         , text "V8 extract hard-coding that can be computed"
+        , viewGrid
         ]
 
 
 viewGrid =
     div
         [ style "display" "inline-block"
+        , style "align-self" "start"
+        , style "overflow" "hidden"
         , padding "1rem"
         ]
         [ div
@@ -72,39 +76,8 @@ viewGrid =
             [ text ""
             , viewConnections
             , viewCells
-            , viewNewCells
             ]
         ]
-
-
-viewNewCells =
-    div
-        [ style "" ""
-        , style "display" "grid"
-        , style "grid-template" "repeat(4, 100px)/ repeat(4,100px)"
-        , style "padding" "0.5rem"
-        , style "gap" "0.5rem"
-        , style "position" "absolute"
-        , style "inset" "0"
-        ]
-        (List.map
-            (\i ->
-                div
-                    [ style "opacity" "0"
-                    , style "display" "grid"
-                    , style "background-color" "#111"
-                    , style "place-content" "center"
-                    , style "border-radius" "0.5rem"
-                    , if List.member i [ 1, 5, 2, 3 ] then
-                        style "animation" "1000ms ease-out 1000ms 1 normal both running appear-from-top"
-
-                      else
-                        style "" ""
-                    ]
-                    [ text (String.fromInt i) ]
-            )
-            (List.range 1 16)
-        )
 
 
 viewCells =
@@ -161,6 +134,12 @@ viewCells =
                               ]
                             )
                           )
+                        , ( 4
+                          , ( [ "--diff-x:0", "--diff-y:0" ]
+                            , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 4) 1 normal both running slide-for-merge"
+                              ]
+                            )
+                          )
                         ]
 
                     ( computedCssVars, computedStyles ) =
@@ -169,23 +148,55 @@ viewCells =
                             |> List.head
                             |> Maybe.map Tuple.second
                             |> Maybe.withDefault ( [], [] )
-
-                    -- |> always ( [], [] )
                 in
-                div
-                    ([ attribute "style" (computedCssVars |> String.join ";")
-                     , style "display" "grid"
-                     , style "background-color" "#111"
-                     , style "place-content" "center"
-                     , style "border-radius" "0.5rem"
-                     , style "z-index" "1"
-                     ]
-                        ++ computedStyles
-                    )
-                    [ text (String.fromInt i) ]
+                viewTile (gpFromIndex i) i computedCssVars computedStyles
             )
             (List.range 1 16)
+            ++ List.map
+                (\i ->
+                    viewTile (gpFromIndex i)
+                        i
+                        []
+                        [ style "opacity" "0"
+                        , style "animation" "1000ms ease-out 1000ms 1 normal both running appear-from-top"
+                        ]
+                )
+                [ 1, 5, 2, 3 ]
+            ++ [ viewTile (gpFromIndex 4) 256 [] <|
+                    [ style "animation" "1000ms ease-out 1000ms 1 normal both running merged-appear"
+                    ]
+               ]
         )
+
+
+viewTileAtIndex i =
+    viewTile (gpFromIndex i) i
+
+
+gpFromIndex i =
+    ( modBy 4 (i - 1), (i - 1) // 4 )
+
+
+viewTile gp val cssVars attrs =
+    div
+        ([ attribute "style" (cssVars |> String.join ";")
+         , gridAreaFromGP gp
+         , style "display" "grid"
+         , style "background-color" "#111"
+         , style "place-content" "center"
+         , style "border-radius" "0.5rem"
+         , style "z-index" "1"
+         ]
+            ++ attrs
+        )
+        [ text (String.fromInt val)
+
+        -- , text <| Debug.toString gp
+        ]
+
+
+gridAreaFromGP ( x, y ) =
+    style "grid-area" (String.fromInt (y + 1) ++ "/" ++ String.fromInt (x + 1))
 
 
 viewConnections =
@@ -246,6 +257,12 @@ body{ margin:0; height:100%; }
     to{ opacity:1;}
 }
 
+@keyframes merged-appear{
+    from{scale:0;}
+    50%{scale: 1.2;}
+    to{scale:1;}
+}
+
 @keyframes slide-for-merge { 
     from{opacity:1;}
     to{
@@ -253,7 +270,8 @@ body{ margin:0; height:100%; }
                    calc( (100% + 0.5rem) * var(--diff-y,0)) ;
 
         opacity:1;
-        visibility:hidden;
+        _visibility:hidden;
+        scale:0;
     }
 }
 
