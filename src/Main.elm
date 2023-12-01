@@ -55,7 +55,7 @@ view model =
         []
         [ globalStyles
         , viewGrid
-        , text "V7 emulate mouse for making connections"
+        , text "V8 extract hard-coding that can be computed"
         ]
 
 
@@ -70,11 +70,9 @@ viewGrid =
             , style "position" "relative"
             ]
             [ text ""
+            , viewConnections
             , viewCells
-            , viewMouseConnections
-
-            -- , viewConnections
-            -- , viewNewCells
+            , viewNewCells
             ]
         ]
 
@@ -97,7 +95,7 @@ viewNewCells =
                     , style "background-color" "#111"
                     , style "place-content" "center"
                     , style "border-radius" "0.5rem"
-                    , if List.member i [ 1, 2, 3, 5, 7 ] then
+                    , if List.member i [ 1, 5, 2, 3 ] then
                         style "animation" "1000ms ease-out 1000ms 1 normal both running appear-from-top"
 
                       else
@@ -121,7 +119,25 @@ viewCells =
             (\i ->
                 let
                     styleLookup =
-                        [ ( 9
+                        [ ( 1
+                          , ( [ "--drop-down-diff:2" ]
+                            , [ style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-cell"
+                              ]
+                            )
+                          )
+                        , ( 2
+                          , ( [ "--drop-down-diff:1" ]
+                            , [ style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-cell"
+                              ]
+                            )
+                          )
+                        , ( 3
+                          , ( [ "--drop-down-diff:1" ]
+                            , [ style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-cell"
+                              ]
+                            )
+                          )
+                        , ( 9
                           , ( [ "--diff-y:-1" ]
                             , [ style "animation" "calc(1000ms/4) linear 0s 1 normal both running slide-for-merge"
                               ]
@@ -153,7 +169,8 @@ viewCells =
                             |> List.head
                             |> Maybe.map Tuple.second
                             |> Maybe.withDefault ( [], [] )
-                            |> always ( [], [] )
+
+                    -- |> always ( [], [] )
                 in
                 div
                     ([ attribute "style" (computedCssVars |> String.join ";")
@@ -190,29 +207,6 @@ viewConnections =
             , style "stroke-dashoffset" "-1"
             , style "transition" "all 1s"
             , style "animation" "1s linear 0s 1 normal both running collapse-stroke"
-            ]
-            []
-        ]
-
-
-viewMouseConnections =
-    Svg.svg
-        [ SA.viewBox "-0.5 -0.5 4 4"
-        , style "position" "absolute"
-        , style "inset" "0"
-        , style "fill" "none"
-        , style "overflow" "visible"
-
-        -- , style "pointer-events" "none"
-        , style "z-index" "1"
-        ]
-        [ Svg.polyline
-            [ -- this is how we computed stroke end point reflecting mouse pos.
-              -- $('svg').addEventListener('mousemove',e=>
-              --     console.log(e.offsetX * 4 / 450 - 0.5,e.offsetY * 4 / 450 - 0.5))
-              SA.points "0,2 4.92 1.49"
-            , SA.stroke "#666"
-            , SA.strokeWidth "0.04"
             ]
             []
         ]
