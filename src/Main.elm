@@ -55,7 +55,7 @@ view model =
         []
         [ globalStyles
         , viewGrid
-        , text "V6 merge tile animation"
+        , text "V7 emulate mouse for making connections"
         ]
 
 
@@ -70,9 +70,10 @@ viewGrid =
             , style "position" "relative"
             ]
             [ text ""
-            , viewConnections
             , viewCells
+            , viewMouseConnections
 
+            -- , viewConnections
             -- , viewNewCells
             ]
         ]
@@ -152,6 +153,7 @@ viewCells =
                             |> List.head
                             |> Maybe.map Tuple.second
                             |> Maybe.withDefault ( [], [] )
+                            |> always ( [], [] )
                 in
                 div
                     ([ attribute "style" (computedCssVars |> String.join ";")
@@ -160,11 +162,6 @@ viewCells =
                      , style "place-content" "center"
                      , style "border-radius" "0.5rem"
                      , style "z-index" "1"
-                     , if List.member i [ 5, 6, 7 ] then
-                        style "animation" "1000ms ease-in 0s 1 normal both running vanish"
-
-                       else
-                        style "" ""
                      ]
                         ++ computedStyles
                     )
@@ -181,6 +178,7 @@ viewConnections =
         , style "inset" "0"
         , style "fill" "none"
         , style "pointer-events" "none"
+        , style "z-index" "1"
         ]
         [ Svg.polyline
             [ SA.points "0,2 0,1 1,1 2,1 3,0"
@@ -192,6 +190,29 @@ viewConnections =
             , style "stroke-dashoffset" "-1"
             , style "transition" "all 1s"
             , style "animation" "1s linear 0s 1 normal both running collapse-stroke"
+            ]
+            []
+        ]
+
+
+viewMouseConnections =
+    Svg.svg
+        [ SA.viewBox "-0.5 -0.5 4 4"
+        , style "position" "absolute"
+        , style "inset" "0"
+        , style "fill" "none"
+        , style "overflow" "visible"
+
+        -- , style "pointer-events" "none"
+        , style "z-index" "1"
+        ]
+        [ Svg.polyline
+            [ -- this is how we computed stroke end point reflecting mouse pos.
+              -- $('svg').addEventListener('mousemove',e=>
+              --     console.log(e.offsetX * 4 / 450 - 0.5,e.offsetY * 4 / 450 - 0.5))
+              SA.points "0,2 4.92 1.49"
+            , SA.stroke "#666"
+            , SA.strokeWidth "0.04"
             ]
             []
         ]
