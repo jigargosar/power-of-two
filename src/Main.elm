@@ -59,7 +59,7 @@ view model =
         , let
             tiles =
                 initialTiles
-                    |> updateTilesWithConnections
+                    |> updateTilesWithConnections2
                         [ ( 0, 2 )
                         , ( 0, 1 )
                         , ( 1, 1 )
@@ -81,9 +81,25 @@ type alias TileData =
     ( GP, Val )
 
 
-type Tile
+type TileVM
     = StaticTile TileData
     | MergedTile TileData (List TileData)
+    | DroppedTile TileData Int
+
+
+
+--initialTileVMs =
+--    List.range 1 16
+--        |> List.map
+--            (\i ->
+--                let
+--                    gp =
+--                        ( modBy 4 (i - 1), (i - 1) // 4 )
+--                in
+--                StaticTile ( gp, i )
+--            )
+--
+--
 
 
 initialTiles =
@@ -94,26 +110,46 @@ initialTiles =
                     gp =
                         ( modBy 4 (i - 1), (i - 1) // 4 )
                 in
-                StaticTile ( gp, i )
+                ( gp, i )
             )
+
+
+updateTilesWithConnections2 : List GP -> List TileData -> List TileVM
+updateTilesWithConnections2 cgps its =
+    case LE.last cgps of
+        Nothing ->
+            []
+
+        Just mgp ->
+            let
+                ( ctiles, others ) =
+                    List.partition (\( gp, v ) -> List.member gp cgps) its
+
+                mergedTileVM =
+                    MergedTile ( mgp, 99 ) ctiles
+
+                droppedAndStaticTileVMs =
+                    others
+                        |> List.map
+                            (\( ( x, y ), v ) ->
+                                let
+                                    ct =
+                                        LE.count (\( cx, cy ) -> x == cx && y < cy) cgps
+                                in
+                                if ct > 0 then
+                                    DroppedTile ( ( x, y + ct ), v ) ct
+
+                                else
+                                    StaticTile ( ( x, y ), v )
+                            )
+            in
+            mergedTileVM :: droppedAndStaticTileVMs
 
 
 updateTilesWithConnections connections tiles =
     let
-        tileDataList =
-            tiles
-                |> List.map
-                    (\tile ->
-                        case tile of
-                            StaticTile td ->
-                                td
-
-                            MergedTile td _ ->
-                                td
-                    )
-
         staticTiles =
-            tileDataList
+            tiles
                 |> List.filterMap
                     (\( gp, val ) ->
                         if List.member gp connections then
@@ -126,7 +162,7 @@ updateTilesWithConnections connections tiles =
         mergedTiles =
             connections
                 |> List.filterMap
-                    (\cgp -> tileDataList |> LE.find (\( gp, _ ) -> gp == cgp))
+                    (\cgp -> tiles |> LE.find (\( gp, _ ) -> gp == cgp))
                 |> (\ls ->
                         ls
                             |> LE.last
@@ -193,6 +229,18 @@ viewTile tile =
             div [ style "display" "contents" ]
                 -- (v1 -1 td :: List.indexedMap v1 ls)
                 (List.indexedMap v1 ls)
+
+        DroppedTile ( gp, val ) dy ->
+            div
+                [ gridAreaFromGP gp
+                , style "display" "grid"
+                , style "background-color" "#111"
+                , style "place-content" "center"
+                , style "border-radius" "0.5rem"
+                , style "translate" ("0 " ++ String.fromInt (dy * -110) ++ "%")
+                ]
+                [ text (String.fromInt val)
+                ]
 
 
 gridAreaFromGP ( x, y ) =
