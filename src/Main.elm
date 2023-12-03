@@ -5,6 +5,7 @@ import Browser.Events as BE
 import Html exposing (Attribute, Html, button, div, span, text)
 import Html.Attributes as HA exposing (attribute, class, style)
 import Html.Events as HE exposing (onClick)
+import List.Extra as LE
 import Svg exposing (Svg)
 import Svg.Attributes as SA
 
@@ -45,28 +46,102 @@ update msg model =
             ( model, Cmd.none )
 
 
-padding =
-    style "padding"
-
-
 view : Model -> Html Msg
 view model =
     div
         [ style "display" "flex"
         , style "flex-direction" "column"
+        , style "padding" "2rem"
+        , style "gap" "1rem"
         ]
         [ globalStyles
-        , text "V8 extract hard-coding that can be computed"
-        , viewGrid
+        , text "V9 Implementing game from scratch"
+        , let
+            tiles =
+                initialTiles
+                    |> updateTilesWithConnections
+                        [ ( 0, 2 )
+                        , ( 0, 1 )
+                        , ( 1, 1 )
+                        ]
+          in
+          viewGrid tiles
         ]
 
 
-viewGrid =
+type alias GP =
+    ( Int, Int )
+
+
+type alias Val =
+    Int
+
+
+type alias TileData =
+    ( GP, Val )
+
+
+type Tile
+    = StaticTile TileData
+    | MergedTile TileData (List TileData)
+
+
+initialTiles =
+    List.range 1 16
+        |> List.map
+            (\i ->
+                let
+                    gp =
+                        ( modBy 4 (i - 1), (i - 1) // 4 )
+                in
+                StaticTile ( gp, i )
+            )
+
+
+updateTilesWithConnections connections tiles =
+    let
+        tileDataList =
+            tiles
+                |> List.map
+                    (\tile ->
+                        case tile of
+                            StaticTile td ->
+                                td
+
+                            MergedTile td _ ->
+                                td
+                    )
+
+        staticTiles =
+            tileDataList
+                |> List.filterMap
+                    (\( gp, val ) ->
+                        if List.member gp connections then
+                            Nothing
+
+                        else
+                            Just (StaticTile ( gp, val ))
+                    )
+
+        mergedTiles =
+            connections
+                |> List.filterMap
+                    (\cgp -> tileDataList |> LE.find (\( gp, _ ) -> gp == cgp))
+                |> (\ls ->
+                        ls
+                            |> LE.last
+                            |> Maybe.map (\( gp, _ ) -> [ MergedTile ( gp, 99 ) ls ])
+                            |> Maybe.withDefault []
+                   )
+    in
+    staticTiles ++ mergedTiles
+
+
+viewGrid tiles =
     div
         [ style "display" "inline-block"
         , style "align-self" "start"
         , style "overflow" "hidden"
-        , padding "1rem"
         ]
         [ div
             [ style "background-color" "#333"
@@ -74,153 +149,205 @@ viewGrid =
             , style "position" "relative"
             ]
             [ text ""
-            , viewConnections
-            , viewCells
+            , div
+                [ style "" ""
+                , style "display" "grid"
+                , style "grid-template" "repeat(4, 100px)/ repeat(4,100px)"
+                , style "padding" "0.5rem"
+                , style "gap" "0.5rem"
+                , style "font-size" "2rem"
+                ]
+                (tiles |> List.map viewTile)
             ]
         ]
 
 
-viewCells =
-    div
-        [ style "" ""
-        , style "display" "grid"
-        , style "grid-template" "repeat(4, 100px)/ repeat(4,100px)"
-        , style "padding" "0.5rem"
-        , style "gap" "0.5rem"
-        ]
-        (List.map
-            (\i ->
-                let
-                    styleLookup =
-                        [ ( 1
-                          , ( [ "--drop-down-diff:2" ]
-                            , [ style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-cell"
-                              ]
-                            )
-                          )
-                        , ( 2
-                          , ( [ "--drop-down-diff:1" ]
-                            , [ style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-cell"
-                              ]
-                            )
-                          )
-                        , ( 3
-                          , ( [ "--drop-down-diff:1" ]
-                            , [ style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-cell"
-                              ]
-                            )
-                          )
-                        , ( 9
-                          , ( [ "--diff-y:-1" ]
-                            , [ style "animation" "calc(1000ms/4) linear 0s 1 normal both running slide-for-merge"
-                              ]
-                            )
-                          )
-                        , ( 5
-                          , ( [ "--diff-x:1" ]
-                            , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 1) 1 normal both running slide-for-merge"
-                              ]
-                            )
-                          )
-                        , ( 6
-                          , ( [ "--diff-x:1" ]
-                            , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 2) 1 normal both running slide-for-merge"
-                              ]
-                            )
-                          )
-                        , ( 7
-                          , ( [ "--diff-x:1", "--diff-y:-1" ]
-                            , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 3) 1 normal both running slide-for-merge"
-                              ]
-                            )
-                          )
-                        , ( 4
-                          , ( [ "--diff-x:0", "--diff-y:0" ]
-                            , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 4) 1 normal both running slide-for-merge"
-                              ]
-                            )
-                          )
+viewTile tile =
+    case tile of
+        StaticTile ( gp, val ) ->
+            div
+                [ gridAreaFromGP gp
+                , style "display" "grid"
+                , style "background-color" "#111"
+                , style "place-content" "center"
+                , style "border-radius" "0.5rem"
+                ]
+                [ text (String.fromInt val)
+                ]
+
+        MergedTile td ls ->
+            let
+                v1 i ( gp, val ) =
+                    div
+                        [ gridAreaFromGP gp
+                        , style "display" "grid"
+                        , style "background-color" "#111"
+                        , style "place-content" "center"
+                        , style "border-radius" "0.5rem"
+                        , style "opacity" "0.5"
                         ]
-
-                    ( computedCssVars, computedStyles ) =
-                        styleLookup
-                            |> List.filter (Tuple.first >> (\n -> n == i))
-                            |> List.head
-                            |> Maybe.map Tuple.second
-                            |> Maybe.withDefault ( [], [] )
-                in
-                viewTile (gpFromIndex i) i computedCssVars computedStyles
-            )
-            (List.range 1 16)
-            ++ List.map
-                (\i ->
-                    viewTile (gpFromIndex i)
-                        i
-                        []
-                        [ style "opacity" "0"
-                        , style "animation" "1000ms ease-out 1000ms 1 normal both running appear-from-top"
+                        [ text (String.fromInt val)
+                        , div [ style "font-size" "0.5rem" ] [ text ("" ++ String.fromInt i) ]
                         ]
-                )
-                [ 1, 5, 2, 3 ]
-            ++ [ viewTile (gpFromIndex 4) 256 [] <|
-                    [ style "animation" "1000ms ease-out 1000ms 1 normal both running merged-appear"
-                    ]
-               ]
-        )
-
-
-viewTileAtIndex i =
-    viewTile (gpFromIndex i) i
-
-
-gpFromIndex i =
-    ( modBy 4 (i - 1), (i - 1) // 4 )
-
-
-viewTile gp val cssVars attrs =
-    div
-        ([ attribute "style" (cssVars |> String.join ";")
-         , gridAreaFromGP gp
-         , style "display" "grid"
-         , style "background-color" "#111"
-         , style "place-content" "center"
-         , style "border-radius" "0.5rem"
-         , style "z-index" "1"
-         ]
-            ++ attrs
-        )
-        [ text (String.fromInt val)
-
-        -- , text <| Debug.toString gp
-        ]
+            in
+            div [ style "display" "contents" ]
+                -- (v1 -1 td :: List.indexedMap v1 ls)
+                (List.indexedMap v1 ls)
 
 
 gridAreaFromGP ( x, y ) =
     style "grid-area" (String.fromInt (y + 1) ++ "/" ++ String.fromInt (x + 1))
 
 
-viewConnections =
-    Svg.svg
-        [ SA.viewBox "-0.5 -0.5 4 4"
-        , style "position" "absolute"
-        , style "inset" "0"
-        , style "fill" "none"
-        , style "pointer-events" "none"
-        , style "z-index" "1"
-        ]
-        [ Svg.polyline
-            [ SA.points "0,2 0,1 1,1 2,1 3,0"
-            , SA.stroke "#666"
-            , SA.strokeWidth "0.04"
-            , SA.pathLength "1"
-            , style "stroke-dasharray" "1"
-            , style "stroke-dashoffset" "0"
-            , style "stroke-dashoffset" "-1"
-            , style "transition" "all 1s"
-            , style "animation" "1s linear 0s 1 normal both running collapse-stroke"
-            ]
-            []
-        ]
+padding =
+    style "padding"
+
+
+
+-- viewGrid =
+--     div
+--         [ style "display" "inline-block"
+--         , style "align-self" "start"
+--         , style "overflow" "hidden"
+--         , padding "1rem"
+--         ]
+--         [ div
+--             [ style "background-color" "#333"
+--             , style "border-radius" "0.5rem"
+--             , style "position" "relative"
+--             ]
+--             [ text ""
+--             , viewConnections
+--             , viewCells
+--             ]
+--         ]
+-- viewCells =
+--     div
+--         [ style "" ""
+--         , style "display" "grid"
+--         , style "grid-template" "repeat(4, 100px)/ repeat(4,100px)"
+--         , style "padding" "0.5rem"
+--         , style "gap" "0.5rem"
+--         ]
+--         (List.map
+--             (\i ->
+--                 let
+--                     styleLookup =
+--                         [ ( 1
+--                           , ( [ "--drop-down-diff:2" ]
+--                             , [ style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-cell"
+--                               ]
+--                             )
+--                           )
+--                         , ( 2
+--                           , ( [ "--drop-down-diff:1" ]
+--                             , [ style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-cell"
+--                               ]
+--                             )
+--                           )
+--                         , ( 3
+--                           , ( [ "--drop-down-diff:1" ]
+--                             , [ style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-cell"
+--                               ]
+--                             )
+--                           )
+--                         , ( 9
+--                           , ( [ "--diff-y:-1" ]
+--                             , [ style "animation" "calc(1000ms/4) linear 0s 1 normal both running slide-for-merge"
+--                               ]
+--                             )
+--                           )
+--                         , ( 5
+--                           , ( [ "--diff-x:1" ]
+--                             , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 1) 1 normal both running slide-for-merge"
+--                               ]
+--                             )
+--                           )
+--                         , ( 6
+--                           , ( [ "--diff-x:1" ]
+--                             , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 2) 1 normal both running slide-for-merge"
+--                               ]
+--                             )
+--                           )
+--                         , ( 7
+--                           , ( [ "--diff-x:1", "--diff-y:-1" ]
+--                             , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 3) 1 normal both running slide-for-merge"
+--                               ]
+--                             )
+--                           )
+--                         , ( 4
+--                           , ( [ "--diff-x:0", "--diff-y:0" ]
+--                             , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 4) 1 normal both running slide-for-merge"
+--                               ]
+--                             )
+--                           )
+--                         ]
+--                     ( computedCssVars, computedStyles ) =
+--                         styleLookup
+--                             |> List.filter (Tuple.first >> (\n -> n == i))
+--                             |> List.head
+--                             |> Maybe.map Tuple.second
+--                             |> Maybe.withDefault ( [], [] )
+--                 in
+--                 viewTile (gpFromIndex i) i computedCssVars computedStyles
+--             )
+--             (List.range 1 16)
+--             ++ List.map
+--                 (\i ->
+--                     viewTile (gpFromIndex i)
+--                         i
+--                         []
+--                         [ style "opacity" "0"
+--                         , style "animation" "1000ms ease-out 1000ms 1 normal both running appear-from-top"
+--                         ]
+--                 )
+--                 [ 1, 5, 2, 3 ]
+--             ++ [ viewTile (gpFromIndex 4) 256 [] <|
+--                     [ style "animation" "1000ms ease-out 1000ms 1 normal both running merged-appear"
+--                     ]
+--                ]
+--         )
+-- viewTileAtIndex i =
+--     viewTile (gpFromIndex i) i
+-- gpFromIndex i =
+--     ( modBy 4 (i - 1), (i - 1) // 4 )
+-- viewTile gp val cssVars attrs =
+--     div
+--         ([ attribute "style" (cssVars |> String.join ";")
+--          , gridAreaFromGP gp
+--          , style "display" "grid"
+--          , style "background-color" "#111"
+--          , style "place-content" "center"
+--          , style "border-radius" "0.5rem"
+--          , style "z-index" "1"
+--          ]
+--             ++ attrs
+--         )
+--         [ text (String.fromInt val)
+--         -- , text <| Debug.toString gp
+--         ]
+-- viewConnections =
+--     Svg.svg
+--         [ SA.viewBox "-0.5 -0.5 4 4"
+--         , style "position" "absolute"
+--         , style "inset" "0"
+--         , style "fill" "none"
+--         , style "pointer-events" "none"
+--         , style "z-index" "1"
+--         ]
+--         [ Svg.polyline
+--             [ SA.points "0,2 0,1 1,1 2,1 3,0"
+--             , SA.stroke "#666"
+--             , SA.strokeWidth "0.04"
+--             , SA.pathLength "1"
+--             , style "stroke-dasharray" "1"
+--             , style "stroke-dashoffset" "0"
+--             , style "stroke-dashoffset" "-1"
+--             , style "transition" "all 1s"
+--             , style "animation" "1s linear 0s 1 normal both running collapse-stroke"
+--             ]
+--             []
+--         ]
 
 
 globalStyles =
