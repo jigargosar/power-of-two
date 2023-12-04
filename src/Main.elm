@@ -6,6 +6,7 @@ import Html exposing (Attribute, Html, button, div, span, text)
 import Html.Attributes as HA exposing (attribute, class, style)
 import Html.Events as HE exposing (onClick)
 import List.Extra as LE
+import Maybe.Extra as ME
 import Svg exposing (Svg)
 import Svg.Attributes as SA
 
@@ -58,15 +59,26 @@ view model =
         , text "V9 Implementing game from scratch"
         , let
             tiles =
-                initialTiles
-                    |> updateTilesWithConnections2
-                        [ ( 0, 2 )
-                        , ( 0, 1 )
-                        , ( 1, 1 )
-                        ]
+                updateTilesWithConnections initialCGPs initialTiles
           in
           viewGrid tiles
         ]
+
+
+initialCGPs =
+    -- [ 14, 9, 5, 6, 11 ]
+    [ 13, 9 ]
+        |> List.map idxToGP
+        |> List.reverse
+
+
+initialTiles =
+    List.range 1 16
+        |> List.map (\i -> ( idxToGP i, i ))
+
+
+idxToGP i =
+    ( modBy 4 (i - 1), (i - 1) // 4 )
 
 
 type alias GP =
@@ -83,7 +95,7 @@ type alias TileData =
 
 type TileVM
     = StaticTile TileData
-    | MergedTile TileData (List TileData)
+    | MergedTile TileData Int (List TileData)
     | DroppedTile TileData Int
 
 
@@ -102,31 +114,45 @@ type TileVM
 --
 
 
-initialTiles =
-    List.range 1 16
-        |> List.map
-            (\i ->
-                let
-                    gp =
-                        ( modBy 4 (i - 1), (i - 1) // 4 )
-                in
-                ( gp, i )
-            )
+eq =
+    (==)
 
 
-updateTilesWithConnections2 : List GP -> List TileData -> List TileVM
-updateTilesWithConnections2 cgps its =
-    case LE.last cgps of
+updateTilesWithConnections : List GP -> List TileData -> List TileVM
+updateTilesWithConnections cgps initialTDs =
+    let
+        findInitialTDAtGP gp =
+            initialTDs |> LE.find (Tuple.first >> eq gp)
+
+        maybeCTDs : Maybe (List TileData)
+        maybeCTDs =
+            cgps |> List.map findInitialTDAtGP |> ME.combine
+    in
+    -- case Maybe.map2 Tuple.pair (List.head cgps) maybeCTDs of
+    case Maybe.andThen LE.uncons maybeCTDs of
         Nothing ->
             []
 
-        Just mgp ->
+        Just ( hctd, tctds ) ->
             let
-                ( ctiles, others ) =
-                    List.partition (\( gp, v ) -> List.member gp cgps) its
+                ( _, others ) =
+                    List.partition (\( gp, v ) -> List.member gp cgps) initialTDs
 
                 mergedTileVM =
-                    MergedTile ( mgp, 99 ) ctiles
+                    let
+                        ( x, y ) =
+                            Tuple.first hctd
+
+                        ct =
+                            countHolesBelow ( x, y )
+                    in
+                    MergedTile ( ( x, y + ct ), 99 ) ct (hctd :: tctds)
+
+                holeGPs =
+                    tctds |> List.map Tuple.first
+
+                countHolesBelow ( x, y ) =
+                    LE.count (\( hx, hy ) -> x == hx && y < hy) holeGPs
 
                 droppedAndStaticTileVMs =
                     others
@@ -134,7 +160,7 @@ updateTilesWithConnections2 cgps its =
                             (\( ( x, y ), v ) ->
                                 let
                                     ct =
-                                        LE.count (\( cx, cy ) -> x == cx && y < cy) cgps
+                                        countHolesBelow ( x, y )
                                 in
                                 if ct > 0 then
                                     DroppedTile ( ( x, y + ct ), v ) ct
@@ -144,33 +170,6 @@ updateTilesWithConnections2 cgps its =
                             )
             in
             mergedTileVM :: droppedAndStaticTileVMs
-
-
-updateTilesWithConnections connections tiles =
-    let
-        staticTiles =
-            tiles
-                |> List.filterMap
-                    (\( gp, val ) ->
-                        if List.member gp connections then
-                            Nothing
-
-                        else
-                            Just (StaticTile ( gp, val ))
-                    )
-
-        mergedTiles =
-            connections
-                |> List.filterMap
-                    (\cgp -> tiles |> LE.find (\( gp, _ ) -> gp == cgp))
-                |> (\ls ->
-                        ls
-                            |> LE.last
-                            |> Maybe.map (\( gp, _ ) -> [ MergedTile ( gp, 99 ) ls ])
-                            |> Maybe.withDefault []
-                   )
-    in
-    staticTiles ++ mergedTiles
 
 
 viewGrid tiles =
@@ -211,7 +210,7 @@ viewTile tile =
                 [ text (String.fromInt val)
                 ]
 
-        MergedTile td ls ->
+        MergedTile td dy rls ->
             let
                 v1 i ( gp, val ) =
                     div
@@ -220,15 +219,30 @@ viewTile tile =
                         , style "background-color" "#111"
                         , style "place-content" "center"
                         , style "border-radius" "0.5rem"
-                        , style "opacity" "0.5"
                         ]
                         [ text (String.fromInt val)
-                        , div [ style "font-size" "0.5rem" ] [ text ("" ++ String.fromInt i) ]
+                        , div [ style "font-size" "0.5rem" ] [ text ("cidx = " ++ String.fromInt i) ]
+                        ]
+
+                v2 ( gp, val ) =
+                    div
+                        [ gridAreaFromGP gp
+                        , style "display" "grid"
+                        , style "background-color" "#111"
+                        , style "place-content" "center"
+                        , style "border-radius" "0.5rem"
+                        , style "translate" ("0 " ++ String.fromInt (dy * -110) ++ "%")
+                        ]
+                        [ text (String.fromInt val)
+                        , div [ style "font-size" "0.5rem" ] [ text ("merged dy = " ++ String.fromInt dy) ]
                         ]
             in
             div [ style "display" "contents" ]
                 -- (v1 -1 td :: List.indexedMap v1 ls)
-                (List.indexedMap v1 ls)
+                ([]
+                    ++ List.indexedMap v1 (List.reverse rls)
+                    -- ++ [ v2 td ]
+                )
 
         DroppedTile ( gp, val ) dy ->
             div
@@ -238,8 +252,11 @@ viewTile tile =
                 , style "place-content" "center"
                 , style "border-radius" "0.5rem"
                 , style "translate" ("0 " ++ String.fromInt (dy * -110) ++ "%")
+
+                -- , style "opacity" "0"
                 ]
                 [ text (String.fromInt val)
+                , div [ style "font-size" "0.5rem" ] [ text ("drop dy = " ++ String.fromInt dy) ]
                 ]
 
 
