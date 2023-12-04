@@ -212,7 +212,7 @@ viewTile tile =
 
         MergedTile td dy rls ->
             let
-                v1 i ( gp, val ) =
+                viewCollapseTiles i ( gp, val ) =
                     div
                         [ gridAreaFromGP gp
                         , style "display" "grid"
@@ -224,7 +224,7 @@ viewTile tile =
                         , div [ style "font-size" "0.5rem" ] [ text ("cidx = " ++ String.fromInt i) ]
                         ]
 
-                v2 ( gp, val ) =
+                viewNewMergedTile ( gp, val ) =
                     div
                         [ gridAreaFromGP gp
                         , style "display" "grid"
@@ -238,10 +238,9 @@ viewTile tile =
                         ]
             in
             div [ style "display" "contents" ]
-                -- (v1 -1 td :: List.indexedMap v1 ls)
                 ([]
-                    ++ List.indexedMap v1 (List.reverse rls)
-                    -- ++ [ v2 td ]
+                    ++ List.indexedMap viewCollapseTiles (List.reverse rls)
+                 -- ++ [ viewNewMergedTile td ]
                 )
 
         DroppedTile ( gp, val ) dy ->
