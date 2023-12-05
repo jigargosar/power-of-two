@@ -66,8 +66,8 @@ view model =
 
 
 initialCGPs =
-    -- [ 14, 9, 5, 6, 11 ]
-    [ 13, 9 ]
+    [ 14, 9, 5, 6, 11 ]
+        -- [ 13, 9 ]
         |> List.map idxToGP
         |> List.reverse
 
@@ -128,7 +128,6 @@ updateTilesWithConnections cgps initialTDs =
         maybeCTDs =
             cgps |> List.map findInitialTDAtGP |> ME.combine
     in
-    -- case Maybe.map2 Tuple.pair (List.head cgps) maybeCTDs of
     case Maybe.andThen LE.uncons maybeCTDs of
         Nothing ->
             []
@@ -210,11 +209,28 @@ viewTile tile =
                 [ text (String.fromInt val)
                 ]
 
-        MergedTile td dy rls ->
+        MergedTile td mdy reverseCollapseTDs ->
             let
-                viewCollapseTiles i ( gp, val ) =
+                viewCollapseTiles len i ( ( gp, val ), ( dx, dy ) ) =
                     div
-                        [ gridAreaFromGP gp
+                        [ let
+                            slideDuration =
+                                1000 / toFloat len
+
+                            slideDelay =
+                                slideDuration * toFloat i
+
+                            ms f =
+                                String.fromFloat f ++ "ms"
+                          in
+                          replaceStyles
+                            [ "--diff-x:" ++ String.fromInt dx
+                            , "--diff-y:" ++ String.fromInt dy
+                            , "--duration:" ++ ms slideDuration
+                            , "--delay:" ++ ms slideDelay
+                            ]
+                        , style "animation" "var(--duration) ease-out var(--delay) 1 normal both running slide-for-merge"
+                        , gridAreaFromGP gp
                         , style "display" "grid"
                         , style "background-color" "#111"
                         , style "place-content" "center"
@@ -231,16 +247,30 @@ viewTile tile =
                         , style "background-color" "#111"
                         , style "place-content" "center"
                         , style "border-radius" "0.5rem"
-                        , style "translate" ("0 " ++ String.fromInt (dy * -110) ++ "%")
+                        , style "translate" ("0 " ++ String.fromInt (mdy * -110) ++ "%")
+                        , style "animation" "1000ms ease-out 1000ms 1 normal both running merged-appear"
                         ]
                         [ text (String.fromInt val)
-                        , div [ style "font-size" "0.5rem" ] [ text ("merged dy = " ++ String.fromInt dy) ]
+                        , div [ style "font-size" "0.5rem" ] [ text ("merged dy = " ++ String.fromInt mdy) ]
                         ]
             in
             div [ style "display" "contents" ]
                 ([]
-                    ++ List.indexedMap viewCollapseTiles (List.reverse rls)
-                 -- ++ [ viewNewMergedTile td ]
+                    ++ (let
+                            collapseTDs =
+                                List.reverse reverseCollapseTDs
+
+                            collapseTDWithDiffs =
+                                List.map2
+                                    (\( gp, v ) ( ngp, _ ) ->
+                                        ( ( gp, v ), tmap2 sub ngp gp )
+                                    )
+                                    collapseTDs
+                                    (List.drop 1 collapseTDs ++ (LE.last collapseTDs |> Maybe.map List.singleton |> Maybe.withDefault []))
+                        in
+                        List.indexedMap (viewCollapseTiles (-1 + List.length collapseTDWithDiffs)) collapseTDWithDiffs
+                       )
+                    ++ [ viewNewMergedTile td ]
                 )
 
         DroppedTile ( gp, val ) dy ->
@@ -257,6 +287,18 @@ viewTile tile =
                 [ text (String.fromInt val)
                 , div [ style "font-size" "0.5rem" ] [ text ("drop dy = " ++ String.fromInt dy) ]
                 ]
+
+
+tmap2 fn ( a, b ) ( c, d ) =
+    ( fn a c, fn b d )
+
+
+sub =
+    (-)
+
+
+replaceStyles styles =
+    styles |> String.join ";" |> attribute "style"
 
 
 gridAreaFromGP ( x, y ) =
@@ -460,9 +502,9 @@ body{ margin:0; height:100%; }
         translate: calc( (100% + 0.5rem) * var(--diff-x,0))
                    calc( (100% + 0.5rem) * var(--diff-y,0)) ;
 
-        opacity:1;
+        opacity:0;
         _visibility:hidden;
-        scale:0;
+        scale:1;
     }
 }
 
