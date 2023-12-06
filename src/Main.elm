@@ -66,7 +66,7 @@ view model =
 
 
 initialCGPs =
-    [ 14, 9, 5, 6, 11 ]
+    [ 15, 14, 9, 5, 6, 11 ]
         -- [ 13, 9 ]
         |> List.map idxToGP
         |> List.reverse
@@ -167,8 +167,46 @@ updateTilesWithConnections cgps initialTDs =
                                 else
                                     StaticTile ( ( x, y ), v )
                             )
+
+                allGPs =
+                    initialTDs |> List.map Tuple.first
+
+                isEmpty gp =
+                    List.any (\tvm -> gp == tileVMGP tvm) (mergedTileVM :: droppedAndStaticTileVMs)
+                        |> not
+
+                emptyGPs =
+                    allGPs |> List.filter isEmpty
+
+                maxYOfEmptyGPs =
+                    emptyGPs
+                        |> List.map Tuple.second
+                        |> List.maximum
+                        |> Maybe.withDefault 0
+
+                newDroppedTileVMs =
+                    emptyGPs
+                        |> List.map
+                            (\gp ->
+                                DroppedTile ( gp, -99 ) ( maxYOfEmptyGPs + 1)
+                            )
             in
-            mergedTileVM :: droppedAndStaticTileVMs
+            mergedTileVM
+                :: droppedAndStaticTileVMs
+                ++ newDroppedTileVMs
+                ++ []
+
+
+tileVMGP tvm =
+    case tvm of
+        StaticTile ( gp, _ ) ->
+            gp
+
+        MergedTile ( gp, _ ) _ _ ->
+            gp
+
+        DroppedTile ( gp, _ ) _ ->
+            gp
 
 
 viewGrid tiles =
@@ -219,9 +257,6 @@ viewTile tile =
 
                             slideDelay =
                                 slideDuration * toFloat i
-
-                            ms f =
-                                String.fromFloat f ++ "ms"
                           in
                           replaceStyles
                             [ "--diff-x:" ++ String.fromInt dx
@@ -242,13 +277,22 @@ viewTile tile =
 
                 viewNewMergedTile ( gp, val ) =
                     div
-                        [ gridAreaFromGP gp
+                        [ replaceStyles
+                            [ "--diff-x:" ++ String.fromInt 0
+                            , "--diff-y:" ++ String.fromInt mdy
+                            , "--duration:" ++ ms 1000
+                            , "--delay:" ++ ms 1000
+                            ]
+                        , gridAreaFromGP gp
                         , style "display" "grid"
                         , style "background-color" "#111"
                         , style "place-content" "center"
                         , style "border-radius" "0.5rem"
-                        , style "translate" ("0 " ++ String.fromInt (mdy * -110) ++ "%")
-                        , style "animation" "1000ms ease-out 1000ms 1 normal both running merged-appear"
+
+                        -- , style "translate" ("0 " ++ String.fromInt (mdy * -110) ++ "%")
+                        , style "animation" "1000ms ease-out 1000ms 1 normal both running merged-appear,1000ms ease-out 2000ms 1 normal both running slide-from-diff"
+
+                        -- , style "animation" "var(--duration) ease-out var(--delay) 1 normal both running slide-from-diff"
                         ]
                         [ text (String.fromInt val)
                         , div [ style "font-size" "0.5rem" ] [ text ("merged dy = " ++ String.fromInt mdy) ]
@@ -275,14 +319,20 @@ viewTile tile =
 
         DroppedTile ( gp, val ) dy ->
             div
-                [ gridAreaFromGP gp
+                [ replaceStyles
+                    [ "--diff-x:" ++ String.fromInt 0
+                    , "--diff-y:" ++ String.fromInt dy
+                    , "--duration:" ++ ms 1000
+                    , "--delay:" ++ ms 2000
+                    ]
+                , gridAreaFromGP gp
                 , style "display" "grid"
                 , style "background-color" "#111"
                 , style "place-content" "center"
                 , style "border-radius" "0.5rem"
-                , style "translate" ("0 " ++ String.fromInt (dy * -110) ++ "%")
 
-                -- , style "opacity" "0"
+                -- , style "translate" ("0 " ++ String.fromInt (dy * -110) ++ "%")
+                , style "animation" "var(--duration) ease-out var(--delay) 1 normal both running slide-from-diff"
                 ]
                 [ text (String.fromInt val)
                 , div [ style "font-size" "0.5rem" ] [ text ("drop dy = " ++ String.fromInt dy) ]
@@ -295,6 +345,10 @@ tmap2 fn ( a, b ) ( c, d ) =
 
 sub =
     (-)
+
+
+ms f =
+    String.fromFloat f ++ "ms"
 
 
 replaceStyles styles =
@@ -482,6 +536,18 @@ body{ margin:0; height:100%; }
     to{translate:0 calc( (100% + 0.5rem) * var(--drop-down-diff,0));} 
 }
 
+
+@keyframes slide-from-diff { 
+    from{
+        translate: calc( -1 * (100% + 0.5rem) * var(--diff-x,0))
+                   calc( -1 * (100% + 0.5rem) * var(--diff-y,0)) ;
+    }
+    to{
+    }
+}
+
+
+
 @keyframes appear-from-top { 
     from{
         opacity:1;
@@ -495,6 +561,7 @@ body{ margin:0; height:100%; }
     50%{scale: 1.2;}
     to{scale:1;}
 }
+
 
 @keyframes slide-for-merge { 
     from{opacity:1;}
