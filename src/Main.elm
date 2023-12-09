@@ -60,8 +60,7 @@ init () =
                 -- [ 15, 14, 9, 5, 6, 11 ]
                 -- [ 13, 9 ]
                 |> withRollback (connectAll (NEL.map idxToGP ( 15, [ 14, 9, 5, 6, 11 ] )))
-
-        -- |> withRollback completeConnection
+                |> withRollback completeConnection
     in
     ( { game = initialGame }, Cmd.none )
 
@@ -106,12 +105,58 @@ completeConnection : Game -> Maybe Game
 completeConnection game =
     case game of
         Connecting connectionCells cells ->
-            updateTilesWithConnections (connectionCells |> NEL.toList |> List.map cellGP) cells
-                |> Just
-                |> Maybe.map (\tiles -> Connected tiles)
+            Just (Connected (completeConnectionHelp connectionCells cells))
 
+        -- updateTilesWithConnectionGPs (connectionCells |> NEL.toList |> List.map cellGP) cells
+        --     |> Just
+        --     |> Maybe.map (\tiles -> Connected tiles)
         _ ->
             Nothing
+
+
+completeConnectionHelp connectionTiles notConnectedTiles =
+    let
+        dropTileDelay =
+            NEL.length connectionTiles
+
+        droppedAndStaticTileVMs =
+            notConnectedTiles
+                |> List.map
+                    (\( ( x, y ), v ) ->
+                        let
+                            ct =
+                                countHolesBelow ( x, y ) connectionTiles
+                        in
+                        if ct > 0 then
+                            DroppedTile ( ( x, y + ct ), v ) { dy = ct, dropTileDelay = dropTileDelay }
+
+                        else
+                            StaticTile ( ( x, y ), v )
+                    )
+
+        mergedTileVM =
+            let
+                ( x, y ) =
+                    lastConnectionTileGP connectionTiles
+
+                ct =
+                    countHolesBelow ( x, y ) connectionTiles
+            in
+            MergedTile ( ( x, y + ct ), 99 ) ct connectionTiles
+
+        tileVMExistsAt gp =
+            List.any (tileVMGP >> eq gp) (mergedTileVM :: droppedAndStaticTileVMs)
+
+        emptyGPs =
+            NEL.toList connectionTiles
+                ++ notConnectedTiles
+                |> List.map cellGP
+                |> reject tileVMExistsAt
+    in
+    mergedTileVM
+        :: droppedAndStaticTileVMs
+        ++ createNewDroppedTileVMs dropTileDelay emptyGPs
+        ++ []
 
 
 connect : GP -> Game -> Maybe Game
@@ -121,15 +166,18 @@ connect gp game =
             findCellAt gp cells
                 |> Maybe.map
                     (\cell ->
-                        Connecting (initConnectionCells cell) cells
+                        Connecting (initConnectionCells cell) (LE.remove cell cells)
                     )
 
         Connecting connectionCells cells ->
             findCellAt gp cells
-                |> Maybe.andThen (\cell -> addConnectionCell cell connectionCells)
-                |> Maybe.map
-                    (\newConnectionCells ->
-                        Connecting newConnectionCells cells
+                |> Maybe.andThen
+                    (\cell ->
+                        addConnectionCell cell connectionCells
+                            |> Maybe.map
+                                (\newConnectionCells ->
+                                    Connecting newConnectionCells (LE.remove cell cells)
+                                )
                     )
 
         _ ->
@@ -176,7 +224,7 @@ view model =
                     viewGrid tiles
             , let
                 tiles =
-                    updateTilesWithConnections initialCGPs initialTileDataList
+                    updateTilesWithConnectionGPs initialCGPs initialTileDataList
               in
               viewGrid tiles
             ]
@@ -281,8 +329,8 @@ createNewDroppedTileVMs dropTileDelay emptyGPs =
             )
 
 
-updateTilesWithConnections : List GP -> List TileData -> List TileVM
-updateTilesWithConnections connectionGPs tiles =
+updateTilesWithConnectionGPs : List GP -> List TileData -> List TileVM
+updateTilesWithConnectionGPs connectionGPs tiles =
     case partitionConnectedTiles connectionGPs tiles of
         Nothing ->
             []
