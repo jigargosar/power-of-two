@@ -107,13 +107,11 @@ completeConnection game =
         Connecting connectionCells cells ->
             Just (Connected (completeConnectionHelp connectionCells cells))
 
-        -- updateTilesWithConnectionGPs (connectionCells |> NEL.toList |> List.map cellGP) cells
-        --     |> Just
-        --     |> Maybe.map (\tiles -> Connected tiles)
         _ ->
             Nothing
 
 
+completeConnectionHelp : ConnectionCells -> Cells -> Tiles
 completeConnectionHelp connectionTiles notConnectedTiles =
     let
         dropTileDelay =
@@ -217,18 +215,27 @@ view model =
                     viewGrid (cells |> List.map StaticTile)
 
                 Connecting connectionCells cells ->
-                    -- viewGrid (cells |> List.map StaticTile)
                     tileContainer (NEL.toList connectionCells |> List.map viewConnectingTile)
 
                 Connected tiles ->
                     viewGrid tiles
-            , let
-                tiles =
-                    updateTilesWithConnectionGPs initialCGPs initialTileDataList
-              in
-              viewGrid tiles
+            , viewGrid mockTiles
             ]
         ]
+
+
+mockTiles =
+    completeConnectionsFromGPs initialCGPs initialTileDataList
+
+
+completeConnectionsFromGPs : List GP -> List TileData -> List TileVM
+completeConnectionsFromGPs connectionGPs tiles =
+    case partitionConnectedTiles connectionGPs tiles of
+        Nothing ->
+            []
+
+        Just ( connectionTiles, notConnectedTiles ) ->
+            completeConnectionHelp connectionTiles notConnectedTiles
 
 
 initialCGPs =
@@ -327,56 +334,6 @@ createNewDroppedTileVMs dropTileDelay emptyGPs =
             (\gp ->
                 DroppedTile ( gp, -99 ) { dy = maxYOfEmptyGPs + 1, dropTileDelay = dropTileDelay }
             )
-
-
-updateTilesWithConnectionGPs : List GP -> List TileData -> List TileVM
-updateTilesWithConnectionGPs connectionGPs tiles =
-    case partitionConnectedTiles connectionGPs tiles of
-        Nothing ->
-            []
-
-        Just ( connectionTiles, notConnectedTiles ) ->
-            let
-                dropTileDelay =
-                    NEL.length connectionTiles
-
-                droppedAndStaticTileVMs =
-                    notConnectedTiles
-                        |> List.map
-                            (\( ( x, y ), v ) ->
-                                let
-                                    ct =
-                                        countHolesBelow ( x, y ) connectionTiles
-                                in
-                                if ct > 0 then
-                                    DroppedTile ( ( x, y + ct ), v ) { dy = ct, dropTileDelay = dropTileDelay }
-
-                                else
-                                    StaticTile ( ( x, y ), v )
-                            )
-
-                mergedTileVM =
-                    let
-                        ( x, y ) =
-                            lastConnectionTileGP connectionTiles
-
-                        ct =
-                            countHolesBelow ( x, y ) connectionTiles
-                    in
-                    MergedTile ( ( x, y + ct ), 99 ) ct connectionTiles
-
-                tileVMExistsAt gp =
-                    List.any (tileVMGP >> eq gp) (mergedTileVM :: droppedAndStaticTileVMs)
-
-                emptyGPs =
-                    tiles
-                        |> List.map Tuple.first
-                        |> reject tileVMExistsAt
-            in
-            mergedTileVM
-                :: droppedAndStaticTileVMs
-                ++ createNewDroppedTileVMs dropTileDelay emptyGPs
-                ++ []
 
 
 tileContainer children =
