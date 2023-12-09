@@ -279,21 +279,6 @@ createNewDroppedTileVMs dropTileDelay emptyGPs =
             )
 
 
-createNewDroppedTileVMs2 emptyGPs =
-    let
-        maxYOfEmptyGPs =
-            emptyGPs
-                |> List.map Tuple.second
-                |> List.maximum
-                |> Maybe.withDefault 0
-    in
-    emptyGPs
-        |> List.map
-            (\gp ->
-                ( ( gp, -99 ), maxYOfEmptyGPs + 1 )
-            )
-
-
 updateTilesWithConnections : List GP -> List TileData -> List TileVM
 updateTilesWithConnections connectionGPs tiles =
     case partitionConnectedTiles connectionGPs tiles of
@@ -342,46 +327,6 @@ updateTilesWithConnections connectionGPs tiles =
                 :: droppedAndStaticTileVMs
                 ++ createNewDroppedTileVMs dropTileDelay emptyGPs
                 ++ []
-
-
-updateTilesWithConnections2 : List GP -> List TileData -> Maybe { connected : ConnectionTiles, merged : ( Cell, Int ), dropped : List ( Cell, Int ) }
-updateTilesWithConnections2 connectionGPs tiles =
-    case partitionConnectedTiles connectionGPs tiles of
-        Nothing ->
-            Nothing
-
-        Just ( connectionTiles, notConnectedTiles ) ->
-            let
-                droppedAndStaticTileVMs =
-                    notConnectedTiles
-                        |> List.map
-                            (\( ( x, y ), v ) ->
-                                let
-                                    ct =
-                                        countHolesBelow ( x, y ) connectionTiles
-                                in
-                                ( ( ( x, y + ct ), v ), ct )
-                            )
-
-                mergedTileVM =
-                    let
-                        ( x, y ) =
-                            lastConnectionTileGP connectionTiles
-
-                        ct =
-                            countHolesBelow ( x, y ) connectionTiles
-                    in
-                    ( ( ( x, y + ct ), 99 ), ct )
-
-                tileVMExistsAt gp =
-                    List.any (Tuple.first >> cellGP >> eq gp) (mergedTileVM :: droppedAndStaticTileVMs)
-
-                emptyGPs =
-                    tiles
-                        |> List.map Tuple.first
-                        |> reject tileVMExistsAt
-            in
-            Just { connected = connectionTiles, merged = mergedTileVM, dropped = droppedAndStaticTileVMs ++ createNewDroppedTileVMs2 emptyGPs }
 
 
 viewGrid tiles =
