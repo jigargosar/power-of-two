@@ -373,13 +373,9 @@ viewTile tile =
                     div
                         [ let
                             slideDuration =
-                                -- 1000 / toFloat len
-                                -- "calc(var(--unit-time) / $len)"
-                                --     |> String.replace "$len" (String.fromInt len)
                                 "calc(var(--unit-time))"
 
                             slideDelay =
-                                -- slideDuration * toFloat i
                                 "calc($slideDuration * $idx)"
                                     |> String.replace "$slideDuration" slideDuration
                                     |> String.replace "$idx" (String.fromInt i)
@@ -406,21 +402,21 @@ viewTile tile =
                         [ replaceStyles
                             [ "--diff-x:" ++ String.fromInt 0
                             , "--diff-y:" ++ String.fromInt mdy
-                            , "--slide-down-delay: calc($len * var(--unit-time))"
+                            , "--drop-tile-delay: calc($len * var(--unit-time))"
                                 |> String.replace "$len" (String.fromInt (NEL.length reverseCollapseTDs))
-                            , "--merge-appear-delay: calc(var(--slide-down-delay) - var(--unit-time))"
+                            , "--merge-appear-delay: calc(var(--drop-tile-delay) - var(--unit-time))"
                             ]
+                        , style "animation"
+                            ([ "var(--unit-time) ease-out var(--merge-appear-delay) 1 normal both running merged-appear"
+                             , "calc(var(--unit-time) * var(--diff-y)) ease-out var(--drop-tile-delay) 1 normal both running slide-from-diff"
+                             ]
+                                |> String.join ","
+                            )
                         , gridAreaFromGP gp
                         , style "display" "grid"
                         , style "background-color" "#111"
                         , style "place-content" "center"
                         , style "border-radius" "0.5rem"
-                        , style "animation"
-                            ([ "var(--unit-time) ease-out var(--merge-appear-delay) 1 normal both running merged-appear"
-                             , "calc(var(--unit-time) * var(--diff-y)) ease-out var(--slide-down-delay) 1 normal both running slide-from-diff"
-                             ]
-                                |> String.join ","
-                            )
                         ]
                         [ text (String.fromInt val)
                         , div [ style "font-size" "0.5rem" ] [ text ("merged dy = " ++ String.fromInt mdy) ]
@@ -450,17 +446,17 @@ viewTile tile =
                 [ replaceStyles
                     [ "--diff-x:" ++ String.fromInt 0
                     , "--diff-y:" ++ String.fromInt dy
-                    , "--slide-down-delay: calc($len * var(--unit-time))"
+                    , "--drop-tile-delay: calc($len * var(--unit-time))"
                         |> String.replace "$len" (String.fromInt dropTileDelay)
                     ]
+                , style "animation" "calc(var(--unit-time) * var(--diff-y)) ease-out var(--drop-tile-delay) 1 normal both running slide-from-diff"
                 , gridAreaFromGP gp
                 , style "display" "grid"
                 , style "background-color" "#111"
                 , style "place-content" "center"
-                , style "border-radius" "0.5rem"
 
                 -- , style "translate" ("0 " ++ String.fromInt (dy * -110) ++ "%")
-                , style "animation" "calc(var(--unit-time) * var(--diff-y)) ease-out var(--slide-down-delay) 1 normal both running slide-from-diff"
+                , style "border-radius" "0.5rem"
                 ]
                 [ text (String.fromInt val)
                 , div [ style "font-size" "0.5rem" ] [ text ("drop dy = " ++ String.fromInt dy) ]
