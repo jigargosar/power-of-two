@@ -60,7 +60,8 @@ init () =
                 -- [ 15, 14, 9, 5, 6, 11 ]
                 -- [ 13, 9 ]
                 |> withRollback (connectAll (NEL.map idxToGP ( 15, [ 14, 9, 5, 6, 11 ] )))
-                |> withRollback completeConnection
+
+        -- |> withRollback completeConnection
     in
     ( { game = initialGame }, Cmd.none )
 
@@ -168,7 +169,8 @@ view model =
                     viewGrid (cells |> List.map StaticTile)
 
                 Connecting connectionCells cells ->
-                    viewGrid (cells |> List.map StaticTile)
+                    -- viewGrid (cells |> List.map StaticTile)
+                    tileContainer (NEL.toList connectionCells |> List.map viewConnectingTile)
 
                 Connected tiles ->
                     viewGrid tiles
@@ -329,6 +331,41 @@ updateTilesWithConnections connectionGPs tiles =
                 ++ []
 
 
+tileContainer children =
+    div
+        [ style "display" "inline-block"
+        , style "align-self" "start"
+        , style "overflow" "hidden"
+        ]
+        [ div
+            [ style "background-color" "#555"
+            , style "border-radius" "0.5rem"
+            , style "position" "relative"
+            ]
+            [ Svg.svg
+                [ style "position" "absolute"
+                , style "display" "inline-block"
+                , SA.viewBox "-0.5 -0.5 4 4"
+                , style "inset" "0"
+                , SA.strokeWidth "0.05"
+
+                -- , style "z-index" "1"
+                ]
+                [ Svg.polyline [ SA.points "0 0 1 1", SA.stroke "#000" ] [] ]
+            , div
+                [ style "" ""
+                , style "position" "relative"
+                , style "display" "grid"
+                , style "grid-template" "repeat(4, 100px)/ repeat(4,100px)"
+                , style "padding" "0.5rem"
+                , style "gap" "0.5rem"
+                , style "font-size" "2rem"
+                ]
+                children
+            ]
+        ]
+
+
 viewGrid tiles =
     div
         [ style "display" "inline-block"
@@ -351,6 +388,18 @@ viewGrid tiles =
                 ]
                 (tiles |> List.map viewTile)
             ]
+        ]
+
+
+viewConnectingTile ( gp, val ) =
+    div
+        [ gridAreaFromGP gp
+        , style "display" "grid"
+        , style "background-color" "#222"
+        , style "place-content" "center"
+        , style "border-radius" "0.5rem"
+        ]
+        [ text (String.fromInt val)
         ]
 
 
