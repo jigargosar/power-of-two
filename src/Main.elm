@@ -126,49 +126,53 @@ completeConnection game =
 
 
 completeConnectionHelp : ConnectionCells -> Cells -> Tiles
-completeConnectionHelp connectionTiles notConnectedTiles =
+completeConnectionHelp connectionCells nonConnectionCells =
     let
         dropTileDelay =
-            NEL.length connectionTiles
+            NEL.length connectionCells
 
-        droppedAndStaticTileVMs =
-            notConnectedTiles
+        droppedAndStaticTiles =
+            nonConnectionCells
                 |> List.map
-                    (\( ( x, y ), v ) ->
+                    (\( gp, v ) ->
                         let
                             ct =
-                                countHolesBelow ( x, y ) connectionTiles
+                                countHolesBelow gp connectionCells
                         in
                         if ct > 0 then
-                            DroppedTile ( ( x, y + ct ), v ) { dy = ct, dropTileDelay = dropTileDelay }
+                            DroppedTile ( gpMoveDownBy ct gp, v ) { dy = ct, dropTileDelay = dropTileDelay }
 
                         else
-                            StaticTile ( ( x, y ), v )
+                            StaticTile ( gp, v )
                     )
 
-        mergedTileVM =
+        mergedTile =
             let
-                ( x, y ) =
-                    lastConnectionTileGP connectionTiles
+                gp =
+                    lastConnectionCellGP connectionCells
 
                 ct =
-                    countHolesBelow ( x, y ) connectionTiles
+                    countHolesBelow gp connectionCells
             in
-            MergedTile ( ( x, y + ct ), 99 ) ct connectionTiles
+            MergedTile ( gpMoveDownBy ct gp, 99 ) ct connectionCells
 
-        tileVMExistsAt gp =
-            List.any (tileGP >> eq gp) (mergedTileVM :: droppedAndStaticTileVMs)
+        tileExistsAt gp =
+            List.any (tileGP >> eq gp) (mergedTile :: droppedAndStaticTiles)
 
         emptyGPs =
-            NEL.toList connectionTiles
-                ++ notConnectedTiles
+            NEL.toList connectionCells
+                ++ nonConnectionCells
                 |> List.map cellGP
-                |> reject tileVMExistsAt
+                |> reject tileExistsAt
     in
-    mergedTileVM
-        :: droppedAndStaticTileVMs
-        ++ createNewDroppedTileVMs dropTileDelay emptyGPs
+    mergedTile
+        :: droppedAndStaticTiles
+        ++ createNewDroppedTiles dropTileDelay emptyGPs
         ++ []
+
+
+gpMoveDownBy dy ( x, y ) =
+    ( x, y + dy )
 
 
 countHolesBelow : GP -> ConnectionCells -> Int
@@ -176,12 +180,12 @@ countHolesBelow ( x, y ) ( _, prevConnectionTiles ) =
     LE.count (\( ( hx, hy ), _ ) -> x == hx && y < hy) prevConnectionTiles
 
 
-lastConnectionTileGP : ConnectionCells -> GP
-lastConnectionTileGP ( ( gp, _ ), _ ) =
+lastConnectionCellGP : ConnectionCells -> GP
+lastConnectionCellGP ( ( gp, _ ), _ ) =
     gp
 
 
-createNewDroppedTileVMs dropTileDelay emptyGPs =
+createNewDroppedTiles dropTileDelay emptyGPs =
     let
         maxYOfEmptyGPs =
             emptyGPs
