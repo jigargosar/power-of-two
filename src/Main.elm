@@ -454,8 +454,6 @@ viewTile tile =
                 , style "display" "grid"
                 , style "background-color" "#111"
                 , style "place-content" "center"
-
-                -- , style "translate" ("0 " ++ String.fromInt (dy * -110) ++ "%")
                 , style "border-radius" "0.5rem"
                 ]
                 [ text (String.fromInt val)
