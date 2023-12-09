@@ -6,6 +6,7 @@ import Html exposing (Attribute, Html, button, div, span, text)
 import Html.Attributes as HA exposing (attribute, class, style)
 import Html.Events as HE exposing (onClick)
 import List.Extra as LE
+import List.Nonempty as NEL
 import Maybe.Extra as ME
 import Svg exposing (Svg)
 import Svg.Attributes as SA
@@ -22,12 +23,116 @@ main =
 
 
 type alias Model =
-    {}
+    { game : Game }
+
+
+type alias Cells =
+    List Cell
+
+
+type alias Cell =
+    TileData
+
+
+type alias Tiles =
+    List Tile
+
+
+type alias Tile =
+    TileVM
+
+
+type alias ConnectionCells =
+    NEL Cell
+
+
+type Game
+    = Start Cells
+    | Connecting ConnectionTiles Cells
+    | Connected Tiles
 
 
 init : () -> ( Model, Cmd Msg )
 init () =
-    ( {}, Cmd.none )
+    let
+        initialGame =
+            Start initialCells
+                -- [ 15, 14, 9, 5, 6, 11 ]
+                -- [ 13, 9 ]
+                |> withRollback (connectAll (NEL.map idxToGP ( 15, [ 14, 9, 5, 6, 11 ] )))
+                |> withRollback completeConnection
+    in
+    ( { game = initialGame }, Cmd.none )
+
+
+connectAll ( h, t ) g =
+    connect h g
+        |> Maybe.andThen
+            (case NEL.fromList t of
+                Just nel ->
+                    connectAll nel
+
+                Nothing ->
+                    Just
+            )
+
+
+withRollback fn a =
+    fn a |> Maybe.withDefault a
+
+
+findCellAt : GP -> Cells -> Maybe Cell
+findCellAt gp cells =
+    LE.find (cellGP >> eq gp) cells
+
+
+cellGP : Cell -> GP
+cellGP =
+    Tuple.first
+
+
+initConnectionCells : Cell -> ConnectionCells
+initConnectionCells cell =
+    NEL.singleton cell
+
+
+addConnectionCell : Cell -> ConnectionCells -> Maybe ConnectionCells
+addConnectionCell cell connectionCells =
+    Just (NEL.prependElem cell connectionCells)
+
+
+completeConnection : Game -> Maybe Game
+completeConnection game =
+    case game of
+        Connecting connectionCells cells ->
+            updateTilesWithConnections (connectionCells |> NEL.toList |> List.map cellGP) cells
+                |> Just
+                |> Maybe.map (\tiles -> Connected tiles)
+
+        _ ->
+            Nothing
+
+
+connect : GP -> Game -> Maybe Game
+connect gp game =
+    case game of
+        Start cells ->
+            findCellAt gp cells
+                |> Maybe.map
+                    (\cell ->
+                        Connecting (initConnectionCells cell) cells
+                    )
+
+        Connecting connectionCells cells ->
+            findCellAt gp cells
+                |> Maybe.andThen (\cell -> addConnectionCell cell connectionCells)
+                |> Maybe.map
+                    (\newConnectionCells ->
+                        Connecting newConnectionCells cells
+                    )
+
+        _ ->
+            Nothing
 
 
 type Msg
@@ -57,11 +162,22 @@ view model =
         ]
         [ globalStyles
         , text "V9 Implementing game from scratch"
-        , let
-            tiles =
-                updateTilesWithConnections initialCGPs initialTiles
-          in
-          viewGrid tiles
+        , div [ style "display" "flex", style "gap" "1rem" ]
+            [ case model.game of
+                Start cells ->
+                    viewGrid (cells |> List.map StaticTile)
+
+                Connecting connectionCells cells ->
+                    viewGrid (cells |> List.map StaticTile)
+
+                Connected tiles ->
+                    viewGrid tiles
+            , let
+                tiles =
+                    updateTilesWithConnections initialCGPs initialTileDataList
+              in
+              viewGrid tiles
+            ]
         ]
 
 
@@ -72,7 +188,11 @@ initialCGPs =
         |> List.reverse
 
 
-initialTiles =
+initialCells =
+    initialTileDataList
+
+
+initialTileDataList =
     List.range 1 16
         |> List.map (\i -> ( idxToGP i, i ))
 
@@ -95,106 +215,8 @@ type alias TileData =
 
 type TileVM
     = StaticTile TileData
-    | MergedTile TileData Int (List TileData)
-    | DroppedTile TileData Int
-
-
-
---initialTileVMs =
---    List.range 1 16
---        |> List.map
---            (\i ->
---                let
---                    gp =
---                        ( modBy 4 (i - 1), (i - 1) // 4 )
---                in
---                StaticTile ( gp, i )
---            )
---
---
-
-
-eq =
-    (==)
-
-
-updateTilesWithConnections : List GP -> List TileData -> List TileVM
-updateTilesWithConnections cgps initialTDs =
-    let
-        findInitialTDAtGP gp =
-            initialTDs |> LE.find (Tuple.first >> eq gp)
-
-        maybeCTDs : Maybe (List TileData)
-        maybeCTDs =
-            cgps |> List.map findInitialTDAtGP |> ME.combine
-    in
-    case Maybe.andThen LE.uncons maybeCTDs of
-        Nothing ->
-            []
-
-        Just ( hctd, tctds ) ->
-            let
-                ( _, others ) =
-                    List.partition (\( gp, v ) -> List.member gp cgps) initialTDs
-
-                mergedTileVM =
-                    let
-                        ( x, y ) =
-                            Tuple.first hctd
-
-                        ct =
-                            countHolesBelow ( x, y )
-                    in
-                    MergedTile ( ( x, y + ct ), 99 ) ct (hctd :: tctds)
-
-                holeGPs =
-                    tctds |> List.map Tuple.first
-
-                countHolesBelow ( x, y ) =
-                    LE.count (\( hx, hy ) -> x == hx && y < hy) holeGPs
-
-                droppedAndStaticTileVMs =
-                    others
-                        |> List.map
-                            (\( ( x, y ), v ) ->
-                                let
-                                    ct =
-                                        countHolesBelow ( x, y )
-                                in
-                                if ct > 0 then
-                                    DroppedTile ( ( x, y + ct ), v ) ct
-
-                                else
-                                    StaticTile ( ( x, y ), v )
-                            )
-
-                allGPs =
-                    initialTDs |> List.map Tuple.first
-
-                isEmpty gp =
-                    List.any (\tvm -> gp == tileVMGP tvm) (mergedTileVM :: droppedAndStaticTileVMs)
-                        |> not
-
-                emptyGPs =
-                    allGPs |> List.filter isEmpty
-
-                maxYOfEmptyGPs =
-                    emptyGPs
-                        |> List.map Tuple.second
-                        |> List.maximum
-                        |> Maybe.withDefault 0
-
-                newDroppedTileVMs =
-                    emptyGPs
-                        |> List.map
-                            (\gp ->
-                                DroppedTile ( gp, -99 ) ( maxYOfEmptyGPs + 1)
-                            )
-            in
-            mergedTileVM
-                :: droppedAndStaticTileVMs
-                ++ newDroppedTileVMs
-                ++ []
+    | MergedTile TileData Int ConnectionTiles
+    | DroppedTile TileData { dy : Int, dropTileDelay : Int }
 
 
 tileVMGP tvm =
@@ -207,6 +229,159 @@ tileVMGP tvm =
 
         DroppedTile ( gp, _ ) _ ->
             gp
+
+
+type alias ConnectionTiles =
+    NEL TileData
+
+
+countHolesBelow : GP -> ConnectionTiles -> Int
+countHolesBelow ( x, y ) ( _, prevConnectionTiles ) =
+    LE.count (\( ( hx, hy ), _ ) -> x == hx && y < hy) prevConnectionTiles
+
+
+lastConnectionTileGP : ConnectionTiles -> GP
+lastConnectionTileGP ( ( gp, _ ), _ ) =
+    gp
+
+
+partitionConnectedTiles : List GP -> List TileData -> Maybe ( ConnectionTiles, List TileData )
+partitionConnectedTiles connectionGPs tiles =
+    let
+        maybeConnectionTiles : Maybe ConnectionTiles
+        maybeConnectionTiles =
+            connectionGPs
+                |> List.map (\gp -> tiles |> LE.find (Tuple.first >> eq gp))
+                |> ME.combine
+                |> Maybe.andThen LE.uncons
+    in
+    maybeConnectionTiles
+        |> Maybe.map
+            (\connectionTiles ->
+                ( connectionTiles
+                , tiles |> reject (Tuple.first >> memberOf connectionGPs)
+                )
+            )
+
+
+createNewDroppedTileVMs dropTileDelay emptyGPs =
+    let
+        maxYOfEmptyGPs =
+            emptyGPs
+                |> List.map Tuple.second
+                |> List.maximum
+                |> Maybe.withDefault 0
+    in
+    emptyGPs
+        |> List.map
+            (\gp ->
+                DroppedTile ( gp, -99 ) { dy = maxYOfEmptyGPs + 1, dropTileDelay = dropTileDelay }
+            )
+
+
+createNewDroppedTileVMs2 emptyGPs =
+    let
+        maxYOfEmptyGPs =
+            emptyGPs
+                |> List.map Tuple.second
+                |> List.maximum
+                |> Maybe.withDefault 0
+    in
+    emptyGPs
+        |> List.map
+            (\gp ->
+                ( ( gp, -99 ), maxYOfEmptyGPs + 1 )
+            )
+
+
+updateTilesWithConnections : List GP -> List TileData -> List TileVM
+updateTilesWithConnections connectionGPs tiles =
+    case partitionConnectedTiles connectionGPs tiles of
+        Nothing ->
+            []
+
+        Just ( connectionTiles, notConnectedTiles ) ->
+            let
+                dropTileDelay =
+                    NEL.length connectionTiles
+
+                droppedAndStaticTileVMs =
+                    notConnectedTiles
+                        |> List.map
+                            (\( ( x, y ), v ) ->
+                                let
+                                    ct =
+                                        countHolesBelow ( x, y ) connectionTiles
+                                in
+                                if ct > 0 then
+                                    DroppedTile ( ( x, y + ct ), v ) { dy = ct, dropTileDelay = dropTileDelay }
+
+                                else
+                                    StaticTile ( ( x, y ), v )
+                            )
+
+                mergedTileVM =
+                    let
+                        ( x, y ) =
+                            lastConnectionTileGP connectionTiles
+
+                        ct =
+                            countHolesBelow ( x, y ) connectionTiles
+                    in
+                    MergedTile ( ( x, y + ct ), 99 ) ct connectionTiles
+
+                tileVMExistsAt gp =
+                    List.any (tileVMGP >> eq gp) (mergedTileVM :: droppedAndStaticTileVMs)
+
+                emptyGPs =
+                    tiles
+                        |> List.map Tuple.first
+                        |> reject tileVMExistsAt
+            in
+            mergedTileVM
+                :: droppedAndStaticTileVMs
+                ++ createNewDroppedTileVMs dropTileDelay emptyGPs
+                ++ []
+
+
+updateTilesWithConnections2 : List GP -> List TileData -> Maybe { connected : ConnectionTiles, merged : ( Cell, Int ), dropped : List ( Cell, Int ) }
+updateTilesWithConnections2 connectionGPs tiles =
+    case partitionConnectedTiles connectionGPs tiles of
+        Nothing ->
+            Nothing
+
+        Just ( connectionTiles, notConnectedTiles ) ->
+            let
+                droppedAndStaticTileVMs =
+                    notConnectedTiles
+                        |> List.map
+                            (\( ( x, y ), v ) ->
+                                let
+                                    ct =
+                                        countHolesBelow ( x, y ) connectionTiles
+                                in
+                                ( ( ( x, y + ct ), v ), ct )
+                            )
+
+                mergedTileVM =
+                    let
+                        ( x, y ) =
+                            lastConnectionTileGP connectionTiles
+
+                        ct =
+                            countHolesBelow ( x, y ) connectionTiles
+                    in
+                    ( ( ( x, y + ct ), 99 ), ct )
+
+                tileVMExistsAt gp =
+                    List.any (Tuple.first >> cellGP >> eq gp) (mergedTileVM :: droppedAndStaticTileVMs)
+
+                emptyGPs =
+                    tiles
+                        |> List.map Tuple.first
+                        |> reject tileVMExistsAt
+            in
+            Just { connected = connectionTiles, merged = mergedTileVM, dropped = droppedAndStaticTileVMs ++ createNewDroppedTileVMs2 emptyGPs }
 
 
 viewGrid tiles =
@@ -253,18 +428,24 @@ viewTile tile =
                     div
                         [ let
                             slideDuration =
-                                1000 / toFloat len
+                                -- 1000 / toFloat len
+                                -- "calc(var(--unit-time) / $len)"
+                                --     |> String.replace "$len" (String.fromInt len)
+                                "calc(var(--unit-time))"
 
                             slideDelay =
-                                slideDuration * toFloat i
+                                -- slideDuration * toFloat i
+                                "calc($slideDuration * $idx)"
+                                    |> String.replace "$slideDuration" slideDuration
+                                    |> String.replace "$idx" (String.fromInt i)
                           in
                           replaceStyles
                             [ "--diff-x:" ++ String.fromInt dx
                             , "--diff-y:" ++ String.fromInt dy
-                            , "--duration:" ++ ms slideDuration
-                            , "--delay:" ++ ms slideDelay
+                            , "--duration:" ++ slideDuration
+                            , "--delay:" ++ slideDelay
                             ]
-                        , style "animation" "var(--duration) ease-out var(--delay) 1 normal both running slide-for-merge"
+                        , style "animation" "var(--duration) ease-out var(--delay) 1 normal both running slide-to-diff-and-vanish"
                         , gridAreaFromGP gp
                         , style "display" "grid"
                         , style "background-color" "#111"
@@ -280,19 +461,21 @@ viewTile tile =
                         [ replaceStyles
                             [ "--diff-x:" ++ String.fromInt 0
                             , "--diff-y:" ++ String.fromInt mdy
-                            , "--duration:" ++ ms 1000
-                            , "--delay:" ++ ms 1000
+                            , "--slide-down-delay: calc($len * var(--unit-time))"
+                                |> String.replace "$len" (String.fromInt (NEL.length reverseCollapseTDs))
+                            , "--merge-appear-delay: calc(var(--slide-down-delay) - var(--unit-time))"
                             ]
                         , gridAreaFromGP gp
                         , style "display" "grid"
                         , style "background-color" "#111"
                         , style "place-content" "center"
                         , style "border-radius" "0.5rem"
-
-                        -- , style "translate" ("0 " ++ String.fromInt (mdy * -110) ++ "%")
-                        , style "animation" "1000ms ease-out 1000ms 1 normal both running merged-appear,1000ms ease-out 2000ms 1 normal both running slide-from-diff"
-
-                        -- , style "animation" "var(--duration) ease-out var(--delay) 1 normal both running slide-from-diff"
+                        , style "animation"
+                            ([ "var(--unit-time) ease-out var(--merge-appear-delay) 1 normal both running merged-appear"
+                             , "calc(var(--unit-time) * var(--diff-y)) ease-out var(--slide-down-delay) 1 normal both running slide-from-diff"
+                             ]
+                                |> String.join ","
+                            )
                         ]
                         [ text (String.fromInt val)
                         , div [ style "font-size" "0.5rem" ] [ text ("merged dy = " ++ String.fromInt mdy) ]
@@ -302,7 +485,7 @@ viewTile tile =
                 ([]
                     ++ (let
                             collapseTDs =
-                                List.reverse reverseCollapseTDs
+                                List.reverse (NEL.toList reverseCollapseTDs)
 
                             collapseTDWithDiffs =
                                 List.map2
@@ -317,13 +500,13 @@ viewTile tile =
                     ++ [ viewNewMergedTile td ]
                 )
 
-        DroppedTile ( gp, val ) dy ->
+        DroppedTile ( gp, val ) { dy, dropTileDelay } ->
             div
                 [ replaceStyles
                     [ "--diff-x:" ++ String.fromInt 0
                     , "--diff-y:" ++ String.fromInt dy
-                    , "--duration:" ++ ms 1000
-                    , "--delay:" ++ ms 2000
+                    , "--slide-down-delay: calc($len * var(--unit-time))"
+                        |> String.replace "$len" (String.fromInt dropTileDelay)
                     ]
                 , gridAreaFromGP gp
                 , style "display" "grid"
@@ -332,11 +515,35 @@ viewTile tile =
                 , style "border-radius" "0.5rem"
 
                 -- , style "translate" ("0 " ++ String.fromInt (dy * -110) ++ "%")
-                , style "animation" "var(--duration) ease-out var(--delay) 1 normal both running slide-from-diff"
+                , style "animation" "calc(var(--unit-time) * var(--diff-y)) ease-out var(--slide-down-delay) 1 normal both running slide-from-diff"
                 ]
                 [ text (String.fromInt val)
                 , div [ style "font-size" "0.5rem" ] [ text ("drop dy = " ++ String.fromInt dy) ]
                 ]
+
+
+
+-- UTILS
+
+
+flip fn a b =
+    fn b a
+
+
+memberOf =
+    flip List.member
+
+
+reject =
+    LE.filterNot
+
+
+type alias NEL a =
+    NEL.ListNonempty a
+
+
+eq =
+    (==)
 
 
 tmap2 fn ( a, b ) ( c, d ) =
@@ -363,153 +570,6 @@ padding =
     style "padding"
 
 
-
--- viewGrid =
---     div
---         [ style "display" "inline-block"
---         , style "align-self" "start"
---         , style "overflow" "hidden"
---         , padding "1rem"
---         ]
---         [ div
---             [ style "background-color" "#333"
---             , style "border-radius" "0.5rem"
---             , style "position" "relative"
---             ]
---             [ text ""
---             , viewConnections
---             , viewCells
---             ]
---         ]
--- viewCells =
---     div
---         [ style "" ""
---         , style "display" "grid"
---         , style "grid-template" "repeat(4, 100px)/ repeat(4,100px)"
---         , style "padding" "0.5rem"
---         , style "gap" "0.5rem"
---         ]
---         (List.map
---             (\i ->
---                 let
---                     styleLookup =
---                         [ ( 1
---                           , ( [ "--drop-down-diff:2" ]
---                             , [ style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-cell"
---                               ]
---                             )
---                           )
---                         , ( 2
---                           , ( [ "--drop-down-diff:1" ]
---                             , [ style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-cell"
---                               ]
---                             )
---                           )
---                         , ( 3
---                           , ( [ "--drop-down-diff:1" ]
---                             , [ style "animation" "1000ms ease-out 1000ms 1 normal both running drop-down-cell"
---                               ]
---                             )
---                           )
---                         , ( 9
---                           , ( [ "--diff-y:-1" ]
---                             , [ style "animation" "calc(1000ms/4) linear 0s 1 normal both running slide-for-merge"
---                               ]
---                             )
---                           )
---                         , ( 5
---                           , ( [ "--diff-x:1" ]
---                             , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 1) 1 normal both running slide-for-merge"
---                               ]
---                             )
---                           )
---                         , ( 6
---                           , ( [ "--diff-x:1" ]
---                             , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 2) 1 normal both running slide-for-merge"
---                               ]
---                             )
---                           )
---                         , ( 7
---                           , ( [ "--diff-x:1", "--diff-y:-1" ]
---                             , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 3) 1 normal both running slide-for-merge"
---                               ]
---                             )
---                           )
---                         , ( 4
---                           , ( [ "--diff-x:0", "--diff-y:0" ]
---                             , [ style "animation" "calc(1000ms/4) linear calc(1s / 4 * 4) 1 normal both running slide-for-merge"
---                               ]
---                             )
---                           )
---                         ]
---                     ( computedCssVars, computedStyles ) =
---                         styleLookup
---                             |> List.filter (Tuple.first >> (\n -> n == i))
---                             |> List.head
---                             |> Maybe.map Tuple.second
---                             |> Maybe.withDefault ( [], [] )
---                 in
---                 viewTile (gpFromIndex i) i computedCssVars computedStyles
---             )
---             (List.range 1 16)
---             ++ List.map
---                 (\i ->
---                     viewTile (gpFromIndex i)
---                         i
---                         []
---                         [ style "opacity" "0"
---                         , style "animation" "1000ms ease-out 1000ms 1 normal both running appear-from-top"
---                         ]
---                 )
---                 [ 1, 5, 2, 3 ]
---             ++ [ viewTile (gpFromIndex 4) 256 [] <|
---                     [ style "animation" "1000ms ease-out 1000ms 1 normal both running merged-appear"
---                     ]
---                ]
---         )
--- viewTileAtIndex i =
---     viewTile (gpFromIndex i) i
--- gpFromIndex i =
---     ( modBy 4 (i - 1), (i - 1) // 4 )
--- viewTile gp val cssVars attrs =
---     div
---         ([ attribute "style" (cssVars |> String.join ";")
---          , gridAreaFromGP gp
---          , style "display" "grid"
---          , style "background-color" "#111"
---          , style "place-content" "center"
---          , style "border-radius" "0.5rem"
---          , style "z-index" "1"
---          ]
---             ++ attrs
---         )
---         [ text (String.fromInt val)
---         -- , text <| Debug.toString gp
---         ]
--- viewConnections =
---     Svg.svg
---         [ SA.viewBox "-0.5 -0.5 4 4"
---         , style "position" "absolute"
---         , style "inset" "0"
---         , style "fill" "none"
---         , style "pointer-events" "none"
---         , style "z-index" "1"
---         ]
---         [ Svg.polyline
---             [ SA.points "0,2 0,1 1,1 2,1 3,0"
---             , SA.stroke "#666"
---             , SA.strokeWidth "0.04"
---             , SA.pathLength "1"
---             , style "stroke-dasharray" "1"
---             , style "stroke-dashoffset" "0"
---             , style "stroke-dashoffset" "-1"
---             , style "transition" "all 1s"
---             , style "animation" "1s linear 0s 1 normal both running collapse-stroke"
---             ]
---             []
---         ]
-
-
 globalStyles =
     Html.node "style" [] [ text """
 
@@ -519,23 +579,15 @@ globalStyles =
     font-size:20px;
     background:#111;
     color:#eee;
+
+    --unit-time: 1000ms;
+    --unit-time: 300ms;
+
 }
 
 * { box-sizing:border-box; }
 
 body{ margin:0; height:100%; }
-
-@keyframes vanish-stroke { to{stroke-width:0;}}
-@keyframes collapse-stroke { 
-    from{stroke-dashoffset:0;}
-    to{stroke-dashoffset:-1;}
-}
-@keyframes vanish { to{scale:0;} }
-
-@keyframes drop-down-cell { 
-    to{translate:0 calc( (100% + 0.5rem) * var(--drop-down-diff,0));} 
-}
-
 
 @keyframes slide-from-diff { 
     from{
@@ -546,25 +598,15 @@ body{ margin:0; height:100%; }
     }
 }
 
-
-
-@keyframes appear-from-top { 
-    from{
-        opacity:1;
-        translate:0 calc( -1 * (100% + 0.5rem) * var(--appear-from-top-diff,2));
-    }
-    to{ opacity:1;}
-}
-
 @keyframes merged-appear{
     from{scale:0;}
     50%{scale: 1.2;}
     to{scale:1;}
 }
 
-
-@keyframes slide-for-merge { 
-    from{opacity:1;}
+@keyframes slide-to-diff-and-vanish { 
+    from{
+    }
     to{
         translate: calc( (100% + 0.5rem) * var(--diff-x,0))
                    calc( (100% + 0.5rem) * var(--diff-y,0)) ;
