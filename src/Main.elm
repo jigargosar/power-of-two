@@ -213,6 +213,14 @@ init () =
     ( { game = initialGame }, Cmd.none )
 
 
+completedMockGame =
+    Start mockCells
+        -- [ 15, 14, 9, 5, 6, 11 ]
+        -- [ 13, 9 ]
+        |> withRollback (connectAll (NEL.map idxToGP ( 15, [ 14, 9, 5, 6, 11 ] )))
+        |> withRollback completeConnection
+
+
 mockCells =
     List.range 1 16
         |> List.map (\i -> ( idxToGP i, i ))
@@ -220,14 +228,6 @@ mockCells =
 
 idxToGP i =
     ( modBy 4 (i - 1), (i - 1) // 4 )
-
-
-completedMockGame =
-    Start mockCells
-        -- [ 15, 14, 9, 5, 6, 11 ]
-        -- [ 13, 9 ]
-        |> withRollback (connectAll (NEL.map idxToGP ( 15, [ 14, 9, 5, 6, 11 ] )))
-        |> withRollback completeConnection
 
 
 withRollback fn a =
