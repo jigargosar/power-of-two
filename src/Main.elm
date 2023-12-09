@@ -22,63 +22,25 @@ main =
         }
 
 
-type alias Model =
-    { game : Game }
+type alias GP =
+    ( Int, Int )
+
+
+type alias Val =
+    Int
+
+
+type alias Cell =
+    ( GP, Val )
 
 
 type alias Cells =
     List Cell
 
 
-type alias Cell =
-    TileData
-
-
-type alias Tiles =
-    List Tile
-
-
-type alias Tile =
-    TileVM
-
-
-type alias ConnectionCells =
-    NEL Cell
-
-
-type Game
-    = Start Cells
-    | Connecting ConnectionTiles Cells
-    | Connected Tiles
-
-
-init : () -> ( Model, Cmd Msg )
-init () =
-    let
-        initialGame =
-            Start initialCells
-                -- [ 15, 14, 9, 5, 6, 11 ]
-                -- [ 13, 9 ]
-                |> withRollback (connectAll (NEL.map idxToGP ( 15, [ 14, 9, 5, 6, 11 ] )))
-                |> withRollback completeConnection
-    in
-    ( { game = initialGame }, Cmd.none )
-
-
-connectAll ( h, t ) g =
-    connect h g
-        |> Maybe.andThen
-            (case NEL.fromList t of
-                Just nel ->
-                    connectAll nel
-
-                Nothing ->
-                    Just
-            )
-
-
-withRollback fn a =
-    fn a |> Maybe.withDefault a
+cellGP : Cell -> GP
+cellGP =
+    Tuple.first
 
 
 findCellAt : GP -> Cells -> Maybe Cell
@@ -86,9 +48,8 @@ findCellAt gp cells =
     LE.find (cellGP >> eq gp) cells
 
 
-cellGP : Cell -> GP
-cellGP =
-    Tuple.first
+type alias ConnectionCells =
+    NEL Cell
 
 
 initConnectionCells : Cell -> ConnectionCells
@@ -99,6 +60,59 @@ initConnectionCells cell =
 addConnectionCell : Cell -> ConnectionCells -> Maybe ConnectionCells
 addConnectionCell cell connectionCells =
     Just (NEL.prependElem cell connectionCells)
+
+
+type Tile
+    = StaticTile Cell
+    | MergedTile Cell Int ConnectionCells
+    | DroppedTile Cell { dy : Int, dropTileDelay : Int }
+
+
+type alias Tiles =
+    List Tile
+
+
+tileGP tile =
+    case tile of
+        StaticTile ( gp, _ ) ->
+            gp
+
+        MergedTile ( gp, _ ) _ _ ->
+            gp
+
+        DroppedTile ( gp, _ ) _ ->
+            gp
+
+
+type Game
+    = Start Cells
+    | Connecting ConnectionCells Cells
+    | Connected Tiles
+
+
+connect : GP -> Game -> Maybe Game
+connect gp game =
+    case game of
+        Start cells ->
+            findCellAt gp cells
+                |> Maybe.map
+                    (\cell ->
+                        Connecting (initConnectionCells cell) (LE.remove cell cells)
+                    )
+
+        Connecting connectionCells cells ->
+            findCellAt gp cells
+                |> Maybe.andThen
+                    (\cell ->
+                        addConnectionCell cell connectionCells
+                            |> Maybe.map
+                                (\newConnectionCells ->
+                                    Connecting newConnectionCells (LE.remove cell cells)
+                                )
+                    )
+
+        _ ->
+            Nothing
 
 
 completeConnection : Game -> Maybe Game
@@ -143,7 +157,7 @@ completeConnectionHelp connectionTiles notConnectedTiles =
             MergedTile ( ( x, y + ct ), 99 ) ct connectionTiles
 
         tileVMExistsAt gp =
-            List.any (tileVMGP >> eq gp) (mergedTileVM :: droppedAndStaticTileVMs)
+            List.any (tileGP >> eq gp) (mergedTileVM :: droppedAndStaticTileVMs)
 
         emptyGPs =
             NEL.toList connectionTiles
@@ -157,29 +171,80 @@ completeConnectionHelp connectionTiles notConnectedTiles =
         ++ []
 
 
-connect : GP -> Game -> Maybe Game
-connect gp game =
-    case game of
-        Start cells ->
-            findCellAt gp cells
-                |> Maybe.map
-                    (\cell ->
-                        Connecting (initConnectionCells cell) (LE.remove cell cells)
-                    )
+countHolesBelow : GP -> ConnectionCells -> Int
+countHolesBelow ( x, y ) ( _, prevConnectionTiles ) =
+    LE.count (\( ( hx, hy ), _ ) -> x == hx && y < hy) prevConnectionTiles
 
-        Connecting connectionCells cells ->
-            findCellAt gp cells
-                |> Maybe.andThen
-                    (\cell ->
-                        addConnectionCell cell connectionCells
-                            |> Maybe.map
-                                (\newConnectionCells ->
-                                    Connecting newConnectionCells (LE.remove cell cells)
-                                )
-                    )
 
-        _ ->
-            Nothing
+lastConnectionTileGP : ConnectionCells -> GP
+lastConnectionTileGP ( ( gp, _ ), _ ) =
+    gp
+
+
+createNewDroppedTileVMs dropTileDelay emptyGPs =
+    let
+        maxYOfEmptyGPs =
+            emptyGPs
+                |> List.map Tuple.second
+                |> List.maximum
+                |> Maybe.withDefault 0
+    in
+    emptyGPs
+        |> List.map
+            (\gp ->
+                DroppedTile ( gp, -99 ) { dy = maxYOfEmptyGPs + 1, dropTileDelay = dropTileDelay }
+            )
+
+
+type alias Model =
+    { game : Game }
+
+
+init : () -> ( Model, Cmd Msg )
+init () =
+    let
+        initialGame =
+            Start mockCells
+                -- [ 15, 14, 9, 5, 6, 11 ]
+                -- [ 13, 9 ]
+                |> withRollback (connectAll (NEL.map idxToGP ( 15, [ 14, 9, 5, 6, 11 ] )))
+                |> withRollback completeConnection
+    in
+    ( { game = initialGame }, Cmd.none )
+
+
+mockCells =
+    List.range 1 16
+        |> List.map (\i -> ( idxToGP i, i ))
+
+
+idxToGP i =
+    ( modBy 4 (i - 1), (i - 1) // 4 )
+
+
+completedMockGame =
+    Start mockCells
+        -- [ 15, 14, 9, 5, 6, 11 ]
+        -- [ 13, 9 ]
+        |> withRollback (connectAll (NEL.map idxToGP ( 15, [ 14, 9, 5, 6, 11 ] )))
+        |> withRollback completeConnection
+
+
+withRollback fn a =
+    fn a |> Maybe.withDefault a
+
+
+connectAll : NEL GP -> Game -> Maybe Game
+connectAll ( h, t ) g =
+    connect h g
+        |> Maybe.andThen
+            (case NEL.fromList t of
+                Just nel ->
+                    connectAll nel
+
+                Nothing ->
+                    Just
+            )
 
 
 type Msg
@@ -210,130 +275,22 @@ view model =
         [ globalStyles
         , text "V9 Implementing game from scratch"
         , div [ style "display" "flex", style "gap" "1rem" ]
-            [ case model.game of
-                Start cells ->
-                    viewGrid (cells |> List.map StaticTile)
-
-                Connecting connectionCells cells ->
-                    tileContainer (NEL.toList connectionCells |> List.map viewConnectingTile)
-
-                Connected tiles ->
-                    viewGrid tiles
-            , viewGrid mockTiles
+            [ viewGame model.game
+            , viewGame completedMockGame
             ]
         ]
 
 
-mockTiles =
-    completeConnectionsFromGPs initialCGPs initialTileDataList
+viewGame game =
+    case game of
+        Start cells ->
+            viewGrid (cells |> List.map StaticTile)
 
+        Connecting connectionCells cells ->
+            tileContainer (NEL.toList connectionCells |> List.map viewConnectingTile)
 
-completeConnectionsFromGPs : List GP -> List TileData -> List TileVM
-completeConnectionsFromGPs connectionGPs tiles =
-    case partitionConnectedTiles connectionGPs tiles of
-        Nothing ->
-            []
-
-        Just ( connectionTiles, notConnectedTiles ) ->
-            completeConnectionHelp connectionTiles notConnectedTiles
-
-
-initialCGPs =
-    [ 15, 14, 9, 5, 6, 11 ]
-        -- [ 13, 9 ]
-        |> List.map idxToGP
-        |> List.reverse
-
-
-initialCells =
-    initialTileDataList
-
-
-initialTileDataList =
-    List.range 1 16
-        |> List.map (\i -> ( idxToGP i, i ))
-
-
-idxToGP i =
-    ( modBy 4 (i - 1), (i - 1) // 4 )
-
-
-type alias GP =
-    ( Int, Int )
-
-
-type alias Val =
-    Int
-
-
-type alias TileData =
-    ( GP, Val )
-
-
-type TileVM
-    = StaticTile TileData
-    | MergedTile TileData Int ConnectionTiles
-    | DroppedTile TileData { dy : Int, dropTileDelay : Int }
-
-
-tileVMGP tvm =
-    case tvm of
-        StaticTile ( gp, _ ) ->
-            gp
-
-        MergedTile ( gp, _ ) _ _ ->
-            gp
-
-        DroppedTile ( gp, _ ) _ ->
-            gp
-
-
-type alias ConnectionTiles =
-    NEL TileData
-
-
-countHolesBelow : GP -> ConnectionTiles -> Int
-countHolesBelow ( x, y ) ( _, prevConnectionTiles ) =
-    LE.count (\( ( hx, hy ), _ ) -> x == hx && y < hy) prevConnectionTiles
-
-
-lastConnectionTileGP : ConnectionTiles -> GP
-lastConnectionTileGP ( ( gp, _ ), _ ) =
-    gp
-
-
-partitionConnectedTiles : List GP -> List TileData -> Maybe ( ConnectionTiles, List TileData )
-partitionConnectedTiles connectionGPs tiles =
-    let
-        maybeConnectionTiles : Maybe ConnectionTiles
-        maybeConnectionTiles =
-            connectionGPs
-                |> List.map (\gp -> tiles |> LE.find (Tuple.first >> eq gp))
-                |> ME.combine
-                |> Maybe.andThen LE.uncons
-    in
-    maybeConnectionTiles
-        |> Maybe.map
-            (\connectionTiles ->
-                ( connectionTiles
-                , tiles |> reject (Tuple.first >> memberOf connectionGPs)
-                )
-            )
-
-
-createNewDroppedTileVMs dropTileDelay emptyGPs =
-    let
-        maxYOfEmptyGPs =
-            emptyGPs
-                |> List.map Tuple.second
-                |> List.maximum
-                |> Maybe.withDefault 0
-    in
-    emptyGPs
-        |> List.map
-            (\gp ->
-                DroppedTile ( gp, -99 ) { dy = maxYOfEmptyGPs + 1, dropTileDelay = dropTileDelay }
-            )
+        Connected tiles ->
+            viewGrid tiles
 
 
 tileContainer children =
