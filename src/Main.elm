@@ -412,18 +412,18 @@ viewTile tile =
             div [ style "display" "contents" ]
                 ([]
                     ++ (let
-                            reverseConnectionCellList =
+                            collapsingCells =
                                 List.reverse (NEL.toList connectionCells)
 
-                            collapseTDWithDiffs =
+                            collapsingToCells =
                                 List.map2
                                     (\( gp, v ) ( ngp, _ ) ->
                                         ( ( gp, v ), ngp )
                                     )
-                                    reverseConnectionCellList
-                                    (List.drop 1 reverseConnectionCellList ++ (LE.last reverseConnectionCellList |> Maybe.map List.singleton |> Maybe.withDefault []))
+                                    collapsingCells
+                                    (List.drop 1 collapsingCells ++ (LE.last collapsingCells |> Maybe.map List.singleton |> Maybe.withDefault []))
                         in
-                        List.indexedMap viewCollapsingTile collapseTDWithDiffs
+                        List.indexedMap viewCollapsingToTile collapsingToCells
                        )
                     ++ [ viewNewMergedTile td ]
                 )
@@ -448,7 +448,7 @@ viewTile tile =
                 ]
 
 
-viewCollapsingTile i ( ( ( gx, gy ), val ), ( ngx, ngy ) ) =
+viewCollapsingToTile i ( ( ( gx, gy ), val ), ( ngx, ngy ) ) =
     let
         slideDuration =
             "calc(var(--unit-time))"
