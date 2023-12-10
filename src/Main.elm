@@ -66,6 +66,7 @@ type Tile
     = StaticTile Cell
     | MergedTile Cell Int ConnectionCells
     | DroppedTile Cell { dy : Int, dropTileDelay : Int }
+    | ConnectingTile Cell { to : GP }
 
 
 type alias Tiles =
@@ -82,6 +83,9 @@ tileGP tile =
 
         DroppedTile ( gp, _ ) _ ->
             gp
+
+        _ ->
+            Debug.todo "impl"
 
 
 type Game
@@ -212,7 +216,8 @@ init () =
                 -- [ 15, 14, 9, 5, 6, 11 ]
                 -- [ 13, 9 ]
                 |> withRollback (connectAll (NEL.map idxToGP ( 15, [ 14, 9, 5, 6, 11 ] )))
-                |> withRollback completeConnection
+
+        -- |> withRollback completeConnection
     in
     ( { game = initialGame }, Cmd.none )
 
@@ -291,7 +296,23 @@ viewGame game =
             viewGrid (cells |> List.map StaticTile)
 
         Connecting connectionCells cells ->
-            tileContainer (NEL.toList connectionCells |> List.map viewConnectingTile)
+            viewGrid
+                (let
+                    lastCell =
+                        NEL.head connectionCells
+
+                    lastCellGP =
+                        cellGP lastCell
+                 in
+                 [ ConnectingTile lastCell { to = lastCellGP } ]
+                    ++ (List.foldl
+                            (\c ( toGP, acc ) -> ( cellGP c, ConnectingTile c { to = toGP } :: acc ))
+                            ( lastCellGP, [] )
+                            (NEL.tail connectionCells)
+                            |> Tuple.second
+                       )
+                    ++ List.map StaticTile cells
+                )
 
         Connected tiles ->
             viewGrid tiles
@@ -357,18 +378,6 @@ viewGrid tiles =
         ]
 
 
-viewConnectingTile ( gp, val ) =
-    div
-        [ gridAreaFromGP gp
-        , style "display" "grid"
-        , style "background-color" "#222"
-        , style "place-content" "center"
-        , style "border-radius" "0.5rem"
-        ]
-        [ text (String.fromInt val)
-        ]
-
-
 viewTile tile =
     case tile of
         StaticTile ( gp, val ) ->
@@ -381,6 +390,9 @@ viewTile tile =
                 ]
                 [ text (String.fromInt val)
                 ]
+
+        ConnectingTile ( gp, val ) { to } ->
+            viewConnectingTile gp val to
 
         MergedTile td mdy connectionCells ->
             let
@@ -446,6 +458,34 @@ viewTile tile =
                 [ text (String.fromInt val)
                 , div [ style "font-size" "0.5rem" ] [ text ("drop dy = " ++ String.fromInt dy) ]
                 ]
+
+
+viewConnectingTile (( gx, gy ) as gp) val ( ngx, ngy ) =
+    div [ style "display" "contents" ]
+        [ Svg.svg
+            [ style "position" "absolute"
+            , style "display" "inline-block"
+            , SA.viewBox "-0.5 -0.5 4 4"
+            , style "inset" "0"
+            , SA.strokeWidth "0.05"
+            , style "z-index" "1"
+            ]
+            [ Svg.polyline
+                [ SA.points ([ gx, gy, ngx, ngy ] |> List.map String.fromInt |> String.join " ")
+                , SA.stroke "#999"
+                ]
+                []
+            ]
+        , div
+            [ gridAreaFromGP gp
+            , style "display" "grid"
+            , style "background-color" "#222"
+            , style "place-content" "center"
+            , style "border-radius" "0.5rem"
+            ]
+            [ text (String.fromInt val)
+            ]
+        ]
 
 
 viewCollapsingToTile i ( ( ( gx, gy ), val ), ( ngx, ngy ) ) =
