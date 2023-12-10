@@ -382,43 +382,15 @@ viewTile tile =
                 [ text (String.fromInt val)
                 ]
 
-        MergedTile td mdy reverseCollapseTDs ->
+        MergedTile td mdy connectionCells ->
             let
-                viewCollapseTiles len i ( ( gp, val ), ( dx, dy ) ) =
-                    div
-                        [ let
-                            slideDuration =
-                                "calc(var(--unit-time))"
-
-                            slideDelay =
-                                "calc($slideDuration * $idx)"
-                                    |> String.replace "$slideDuration" slideDuration
-                                    |> String.replace "$idx" (String.fromInt i)
-                          in
-                          replaceStyles
-                            [ "--diff-x:" ++ String.fromInt dx
-                            , "--diff-y:" ++ String.fromInt dy
-                            , "--duration:" ++ slideDuration
-                            , "--delay:" ++ slideDelay
-                            ]
-                        , style "animation" "var(--duration) ease-out var(--delay) 1 normal both running slide-to-diff-and-vanish"
-                        , gridAreaFromGP gp
-                        , style "display" "grid"
-                        , style "background-color" "#111"
-                        , style "place-content" "center"
-                        , style "border-radius" "0.5rem"
-                        ]
-                        [ text (String.fromInt val)
-                        , div [ style "font-size" "0.5rem" ] [ text ("cidx = " ++ String.fromInt i) ]
-                        ]
-
                 viewNewMergedTile ( gp, val ) =
                     div
                         [ replaceStyles
                             [ "--diff-x:" ++ String.fromInt 0
                             , "--diff-y:" ++ String.fromInt mdy
                             , "--drop-tile-delay: calc($len * var(--unit-time))"
-                                |> String.replace "$len" (String.fromInt (NEL.length reverseCollapseTDs))
+                                |> String.replace "$len" (String.fromInt (NEL.length connectionCells))
                             , "--merge-appear-delay: calc(var(--drop-tile-delay) - var(--unit-time))"
                             ]
                         , style "animation"
@@ -440,18 +412,18 @@ viewTile tile =
             div [ style "display" "contents" ]
                 ([]
                     ++ (let
-                            collapseTDs =
-                                List.reverse (NEL.toList reverseCollapseTDs)
+                            reverseConnectionCellList =
+                                List.reverse (NEL.toList connectionCells)
 
                             collapseTDWithDiffs =
                                 List.map2
                                     (\( gp, v ) ( ngp, _ ) ->
-                                        ( ( gp, v ), tmap2 sub ngp gp )
+                                        ( ( gp, v ), ngp )
                                     )
-                                    collapseTDs
-                                    (List.drop 1 collapseTDs ++ (LE.last collapseTDs |> Maybe.map List.singleton |> Maybe.withDefault []))
+                                    reverseConnectionCellList
+                                    (List.drop 1 reverseConnectionCellList ++ (LE.last reverseConnectionCellList |> Maybe.map List.singleton |> Maybe.withDefault []))
                         in
-                        List.indexedMap (viewCollapseTiles (-1 + List.length collapseTDWithDiffs)) collapseTDWithDiffs
+                        List.indexedMap viewCollapsingTile collapseTDWithDiffs
                        )
                     ++ [ viewNewMergedTile td ]
                 )
@@ -474,6 +446,61 @@ viewTile tile =
                 [ text (String.fromInt val)
                 , div [ style "font-size" "0.5rem" ] [ text ("drop dy = " ++ String.fromInt dy) ]
                 ]
+
+
+viewCollapsingTile i ( ( ( gx, gy ), val ), ( ngx, ngy ) ) =
+    let
+        slideDuration =
+            "calc(var(--unit-time))"
+
+        slideDelay =
+            "calc($slideDuration * $idx)"
+                |> String.replace "$slideDuration" slideDuration
+                |> String.replace "$idx" (String.fromInt i)
+    in
+    div [ style "display" "contents" ]
+        [ Svg.svg
+            [ style "position" "absolute"
+            , style "display" "inline-block"
+            , SA.viewBox "-0.5 -0.5 4 4"
+            , style "inset" "0"
+            , SA.strokeWidth "0.05"
+            , style "z-index" "1"
+            ]
+            [ Svg.polyline
+                [ replaceStyles
+                    [ "--duration:" ++ slideDuration
+                    , "--delay:" ++ slideDelay
+                    ]
+                , style "animation" "var(--duration) ease-out var(--delay) 1 normal both running stroke-vanish"
+                , SA.points
+                    ([ gx, gy, ngx, ngy ] |> List.map String.fromInt |> String.join " ")
+                , SA.stroke "#999"
+                , SA.pathLength "1"
+                , style "stroke-dasharray" "1"
+                , style "stroke-dashoffset" "-0.1"
+                , style "stroke-dashoffset" "0"
+                ]
+                []
+            ]
+        , div
+            [ replaceStyles
+                [ "--diff-x:" ++ String.fromInt (ngx - gx)
+                , "--diff-y:" ++ String.fromInt (ngy - gy)
+                , "--duration:" ++ slideDuration
+                , "--delay:" ++ slideDelay
+                ]
+            , style "animation" "var(--duration) ease-out var(--delay) 1 normal both running slide-to-diff-and-vanish"
+            , gridAreaFromGP ( gx, gy )
+            , style "display" "grid"
+            , style "background-color" "#111"
+            , style "place-content" "center"
+            , style "border-radius" "0.5rem"
+            ]
+            [ text (String.fromInt val)
+            , div [ style "font-size" "0.5rem" ] [ text ("cidx = " ++ String.fromInt i) ]
+            ]
+        ]
 
 
 
@@ -552,11 +579,22 @@ body{ margin:0; height:100%; }
     }
 }
 
+@keyframes stroke-vanish { 
+    from{
+        stroke-dasharray:1;
+        stroke-dashoffset:0;
+    }
+    to{
+        stroke-dashoffset:-1;
+    }
+}
+
 @keyframes merged-appear{
     from{scale:0;}
     50%{scale: 1.2;}
     to{scale:1;}
 }
+
 
 @keyframes slide-to-diff-and-vanish { 
     from{
