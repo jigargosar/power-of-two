@@ -5,6 +5,7 @@ import Browser.Events as BE
 import Html exposing (Attribute, Html, button, div, span, text)
 import Html.Attributes as HA exposing (attribute, class, style)
 import Html.Events as HE exposing (onClick)
+import Html.Keyed
 import List.Extra as LE
 import List.Nonempty as NEL
 import Maybe.Extra as ME
@@ -89,6 +90,21 @@ tileGP tile =
             Debug.todo "impl"
 
 
+tileCell tile =
+    case tile of
+        StaticTile cell ->
+            cell
+
+        MergedTile cell _ _ ->
+            cell
+
+        DroppedTile cell _ ->
+            cell
+
+        _ ->
+            Debug.todo "impl"
+
+
 type Game
     = Start Cells
     | Connecting ConnectionCells Cells
@@ -116,8 +132,9 @@ connect gp game =
                                 )
                     )
 
-        _ ->
-            Nothing
+        Connected tiles ->
+            -- Just (Start (List.map tileCell tiles))
+            connect gp (Start (List.map tileCell tiles))
 
 
 completeConnection : Game -> Maybe Game
@@ -206,7 +223,7 @@ createNewDroppedTiles dropTileDelay emptyGPs =
 
 
 type alias Model =
-    { game : Game }
+    { ct : Int, game : Game }
 
 
 init : () -> ( Model, Cmd Msg )
@@ -217,10 +234,12 @@ init () =
                 -- [ 15, 14, 9, 5, 6, 11 ]
                 -- [ 13, 9 ]
                 |> withRollback (connectAll (NEL.map idxToGP ( 15, [ 14, 9, 5, 6, 11 ] )))
+                |> withRollback completeConnection
 
-        -- |> withRollback completeConnection
+        -- |> withRollback (connect ( 3, 2 ))
+        -- |> Debug.log "debug"
     in
-    ( { game = initialGame }, Cmd.none )
+    ( { ct = 0, game = initialGame }, Cmd.none )
 
 
 completedMockGame =
@@ -258,7 +277,7 @@ connectAll ( h, t ) g =
 
 
 type Msg
-    = Msg
+    = TileClicked GP
 
 
 subscriptions : Model -> Sub Msg
@@ -270,8 +289,19 @@ subscriptions _ =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        Msg ->
-            ( model, Cmd.none )
+        TileClicked gp ->
+            let
+                _ =
+                    Debug.log "debug" gp
+            in
+            ( case connect gp model.game of
+                Just game ->
+                    { model | ct = model.ct + 1, game = game }
+
+                _ ->
+                    model
+            , Cmd.none
+            )
 
 
 view : Model -> Html Msg
@@ -285,7 +315,7 @@ view model =
         [ globalStyles
         , text "V9 Implementing game from scratch"
         , div [ style "display" "flex", style "gap" "1rem" ]
-            [ viewGame model.game
+            [ viewKeyedContent (String.fromInt model.ct) (viewGame model.game)
             , viewGame completedMockGame
             ]
         ]
@@ -319,41 +349,6 @@ viewGame game =
             viewGrid tiles
 
 
-tileContainer children =
-    div
-        [ style "display" "inline-block"
-        , style "align-self" "start"
-        , style "overflow" "hidden"
-        ]
-        [ div
-            [ style "background-color" "#555"
-            , style "border-radius" "0.5rem"
-            , style "position" "relative"
-            ]
-            [ Svg.svg
-                [ style "position" "absolute"
-                , style "display" "inline-block"
-                , SA.viewBox "-0.5 -0.5 4 4"
-                , style "inset" "0"
-                , SA.strokeWidth "0.05"
-
-                -- , style "z-index" "1"
-                ]
-                [ Svg.polyline [ SA.points "0 0 1 1", SA.stroke "#000" ] [] ]
-            , div
-                [ style "" ""
-                , style "position" "relative"
-                , style "display" "grid"
-                , style "grid-template" "repeat(4, 100px)/ repeat(4,100px)"
-                , style "padding" "0.5rem"
-                , style "gap" "0.5rem"
-                , style "font-size" "2rem"
-                ]
-                children
-            ]
-        ]
-
-
 viewGrid tiles =
     div
         [ style "display" "inline-block"
@@ -383,11 +378,12 @@ viewTile tile =
     case tile of
         StaticTile ( gp, val ) ->
             div
-                [ gridAreaFromGP gp
-                , style "display" "grid"
+                [ style "display" "grid"
                 , style "background-color" "#111"
                 , style "place-content" "center"
                 , style "border-radius" "0.5rem"
+                , style "grid-area" (gridAreaFromGP gp)
+                , onClick (TileClicked gp)
                 ]
                 [ text (String.fromInt val)
                 ]
@@ -407,26 +403,28 @@ viewTile tile =
         MergedTile td mdy connectionCells ->
             let
                 viewNewMergedTile ( gp, val ) =
-                    div
-                        [ replaceStyles
+                    withStyles
+                        div
+                        [ cssVars
                             [ "--diff-x:" ++ String.fromInt 0
                             , "--diff-y:" ++ String.fromInt mdy
                             , "--drop-tile-delay: calc($len * var(--unit-time))"
                                 |> String.replace "$len" (String.fromInt (NEL.length connectionCells))
                             , "--merge-appear-delay: calc(var(--drop-tile-delay) - var(--unit-time))"
                             ]
-                        , style "animation"
+                        , style_ "animation"
                             ([ "var(--unit-time) ease-out var(--merge-appear-delay) 1 normal both running merged-appear"
                              , "calc(var(--unit-time) * var(--diff-y)) ease-out var(--drop-tile-delay) 1 normal both running slide-from-diff"
                              ]
                                 |> String.join ","
                             )
-                        , gridAreaFromGP gp
-                        , style "display" "grid"
-                        , style "background-color" "#111"
-                        , style "place-content" "center"
-                        , style "border-radius" "0.5rem"
+                        , style_ "grid-area" (gridAreaFromGP gp)
+                        , style_ "display" "grid"
+                        , style_ "background-color" "#111"
+                        , style_ "place-content" "center"
+                        , style_ "border-radius" "0.5rem"
                         ]
+                        []
                         [ text (String.fromInt val)
                         , div [ style "font-size" "0.5rem" ] [ text ("merged dy = " ++ String.fromInt mdy) ]
                         ]
@@ -451,20 +449,21 @@ viewTile tile =
                 )
 
         DroppedTile ( gp, val ) { dy, dropTileDelay } ->
-            div
-                [ replaceStyles
+            withStyles div
+                [ cssVars
                     [ "--diff-x:" ++ String.fromInt 0
                     , "--diff-y:" ++ String.fromInt dy
                     , "--drop-tile-delay: calc($len * var(--unit-time))"
                         |> String.replace "$len" (String.fromInt dropTileDelay)
                     ]
-                , style "animation" "calc(var(--unit-time) * var(--diff-y)) ease-out var(--drop-tile-delay) 1 normal both running slide-from-diff"
-                , gridAreaFromGP gp
-                , style "display" "grid"
-                , style "background-color" "#111"
-                , style "place-content" "center"
-                , style "border-radius" "0.5rem"
+                , style_ "animation" "calc(var(--unit-time) * var(--diff-y)) ease-out var(--drop-tile-delay) 1 normal both running slide-from-diff"
+                , style_ "grid-area" (gridAreaFromGP gp)
+                , style_ "display" "grid"
+                , style_ "background-color" "#111"
+                , style_ "place-content" "center"
+                , style_ "border-radius" "0.5rem"
                 ]
+                []
                 [ text (String.fromInt val)
                 , div [ style "font-size" "0.5rem" ] [ text ("drop dy = " ++ String.fromInt dy) ]
                 ]
@@ -472,7 +471,7 @@ viewTile tile =
 
 viewConnectingTile gp val =
     div
-        [ gridAreaFromGP gp
+        [ style "grid-area" (gridAreaFromGP gp)
         , style "display" "grid"
         , style "background-color" "#222"
         , style "place-content" "center"
@@ -494,20 +493,21 @@ viewCollapsingToTile i ( ( ( gx, gy ) as gp, val ), ( ngx, ngy ) as ngp ) =
     in
     viewContents
         [ viewCollapsingStroke slideDuration slideDelay (tmap toFloat gp) (tmap toFloat ngp)
-        , div
-            [ replaceStyles
+        , withStyles div
+            [ cssVars
                 [ "--diff-x:" ++ String.fromInt (ngx - gx)
                 , "--diff-y:" ++ String.fromInt (ngy - gy)
                 , "--duration:" ++ slideDuration
                 , "--delay:" ++ slideDelay
                 ]
-            , style "animation" "var(--duration) ease-out var(--delay) 1 normal both running slide-to-diff-and-vanish"
-            , gridAreaFromGP ( gx, gy )
-            , style "display" "grid"
-            , style "background-color" "#111"
-            , style "place-content" "center"
-            , style "border-radius" "0.5rem"
+            , style_ "animation" "var(--duration) ease-out var(--delay) 1 normal both running slide-to-diff-and-vanish"
+            , style_ "grid-area" (gridAreaFromGP ( gx, gy ))
+            , style_ "display" "grid"
+            , style_ "background-color" "#111"
+            , style_ "place-content" "center"
+            , style_ "border-radius" "0.5rem"
             ]
+            []
             [ text (String.fromInt val)
             , div [ style "font-size" "0.5rem" ] [ text ("cidx = " ++ String.fromInt i) ]
             ]
@@ -518,10 +518,11 @@ viewConnectingStroke ( gx, gy ) ( ngx, ngy ) =
     Svg.svg
         [ style "position" "absolute"
         , style "display" "inline-block"
-        , SA.viewBox "-0.5 -0.5 4 4"
         , style "inset" "0"
-        , SA.strokeWidth "0.05"
         , style "z-index" "1"
+        , style "pointer-events" "none"
+        , SA.viewBox "-0.5 -0.5 4 4"
+        , SA.strokeWidth "0.05"
         ]
         [ Svg.polyline
             [ SA.points ([ gx, gy, ngx, ngy ] |> List.map String.fromFloat |> String.join " ")
@@ -535,27 +536,32 @@ viewCollapsingStroke slideDuration slideDelay ( gx, gy ) ( ngx, ngy ) =
     Svg.svg
         [ style "position" "absolute"
         , style "display" "inline-block"
-        , SA.viewBox "-0.5 -0.5 4 4"
         , style "inset" "0"
-        , SA.strokeWidth "0.05"
         , style "z-index" "1"
+        , style "pointer-events" "none"
+        , SA.viewBox "-0.5 -0.5 4 4"
+        , SA.strokeWidth "0.05"
         ]
-        [ Svg.polyline
-            [ replaceStyles
+        [ withStyles Svg.polyline
+            [ cssVars
                 [ "--duration:" ++ slideDuration
                 , "--delay:" ++ slideDelay
                 ]
-            , style "animation" "var(--duration) ease-out var(--delay) 1 normal both running stroke-vanish"
-            , SA.points
-                ([ gx, gy, ngx, ngy ] |> List.map String.fromFloat |> String.join " ")
+            , style_ "animation" "var(--duration) ease-out var(--delay) 1 normal both running stroke-vanish"
+            , style_ "stroke-dasharray" "1"
+            , style_ "stroke-dashoffset" "-0.1"
+            , style_ "stroke-dashoffset" "0"
+            ]
+            [ SA.points ([ gx, gy, ngx, ngy ] |> List.map String.fromFloat |> String.join " ")
             , SA.stroke "#999"
             , SA.pathLength "1"
-            , style "stroke-dasharray" "1"
-            , style "stroke-dashoffset" "-0.1"
-            , style "stroke-dashoffset" "0"
             ]
             []
         ]
+
+
+style_ k v =
+    k ++ ":" ++ v
 
 
 
@@ -598,20 +604,33 @@ ms f =
     String.fromFloat f ++ "ms"
 
 
-replaceStyles styles =
+type alias Styles_ =
+    List String
+
+
+withStyles : (List (Attribute msg) -> List (Html msg) -> Html msg) -> Styles_ -> List (Attribute msg) -> List (Html msg) -> Html msg
+withStyles fn styles attrs =
+    fn (attrStyle styles :: attrs)
+
+
+attrStyle styles =
     styles |> String.join ";" |> attribute "style"
 
 
+cssVars styles =
+    styles |> String.join ";"
+
+
 gridAreaFromGP ( x, y ) =
-    style "grid-area" (String.fromInt (y + 1) ++ "/" ++ String.fromInt (x + 1))
+    String.fromInt (y + 1) ++ "/" ++ String.fromInt (x + 1)
+
+
+viewKeyedContent key content =
+    Html.Keyed.node "div" [ HA.style "display" "contents" ] [ ( key, content ) ]
 
 
 viewContents =
-    div [ style "display" "contents" ]
-
-
-padding =
-    style "padding"
+    Html.div [ HA.style "display" "contents" ]
 
 
 globalStyles =
