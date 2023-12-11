@@ -6,6 +6,7 @@ import Html exposing (Attribute, Html, button, div, span, text)
 import Html.Attributes as HA exposing (attribute, class, style)
 import Html.Events as HE exposing (onClick)
 import Html.Keyed
+import Json.Decode as JD
 import List.Extra as LE
 import List.Nonempty as NEL
 import Maybe.Extra as ME
@@ -131,6 +132,71 @@ connect gp game =
                                     Connecting newConnectionCells (LE.remove cell cells)
                                 )
                     )
+
+        Connected tiles ->
+            -- Just (Start (List.map tileCell tiles))
+            connect gp (Start (List.map tileCell tiles))
+
+
+areNeighbours : GP -> GP -> Bool
+areNeighbours a b =
+    let
+        dxy =
+            tmap2 sub a b |> tmap abs
+    in
+    dxy == ( 1, 1 ) || dxy == ( 1, 0 ) || dxy == ( 0, 1 )
+
+
+onTileEntered : GP -> Game -> Maybe Game
+onTileEntered gp game =
+    case game of
+        Connecting (( last, previous ) as connectionCells) cells ->
+            if areNeighbours gp (cellGP last) then
+                findCellAt gp cells
+                    |> Maybe.andThen
+                        (\cell ->
+                            addConnectionCell cell connectionCells
+                                |> Maybe.map
+                                    (\newConnectionCells ->
+                                        Connecting newConnectionCells (LE.remove cell cells)
+                                    )
+                        )
+                    |> ME.orElseLazy
+                        (\_ ->
+                            LE.uncons previous
+                                |> Maybe.andThen
+                                    (\(( secondLast, _ ) as newConnectionCells) ->
+                                        if cellGP secondLast == gp then
+                                            Just (Connecting newConnectionCells (last :: cells))
+
+                                        else
+                                            Nothing
+                                    )
+                        )
+
+            else
+                Nothing
+
+        _ ->
+            Nothing
+
+
+onTileClicked : GP -> Game -> Maybe Game
+onTileClicked gp game =
+    case game of
+        Start cells ->
+            findCellAt gp cells
+                |> Maybe.map
+                    (\cell ->
+                        Connecting (initConnectionCells cell) (LE.remove cell cells)
+                    )
+
+        Connecting connectionCells cells ->
+            if lastConnectionCellGP connectionCells == gp && NEL.length connectionCells > 1 then
+                Just (Connected (completeConnectionHelp connectionCells cells))
+
+            else
+                Just (Start (NEL.toList connectionCells ++ cells))
 
         Connected tiles ->
             -- Just (Start (List.map tileCell tiles))
@@ -278,6 +344,7 @@ connectAll ( h, t ) g =
 
 type Msg
     = TileClicked GP
+    | TileEntered GP
 
 
 subscriptions : Model -> Sub Msg
@@ -290,11 +357,17 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         TileClicked gp ->
-            let
-                _ =
-                    Debug.log "debug" gp
-            in
-            ( case connect gp model.game of
+            ( case onTileClicked gp model.game of
+                Just game ->
+                    { model | ct = model.ct + 1, game = game }
+
+                _ ->
+                    model
+            , Cmd.none
+            )
+
+        TileEntered gp ->
+            ( case onTileEntered gp model.game of
                 Just game ->
                     { model | ct = model.ct + 1, game = game }
 
@@ -335,7 +408,7 @@ viewGame game =
                     lastCellGP =
                         cellGP lastCell
                  in
-                 [ LastConnectingTile lastCell { to = ( 1.7, -0.3 ) } ]
+                 [ LastConnectingTile lastCell { to = tmap toFloat lastCellGP } ]
                     ++ (List.foldl
                             (\c ( toGP, acc ) -> ( cellGP c, ConnectingTile c { to = toGP } :: acc ))
                             ( lastCellGP, [] )
@@ -374,6 +447,11 @@ viewGrid tiles =
         ]
 
 
+onMouseOver msg =
+    -- HE.on "mouseover" (JD.succeed msg)
+    HE.onMouseOver msg
+
+
 viewTile tile =
     case tile of
         StaticTile ( gp, val ) ->
@@ -384,6 +462,7 @@ viewTile tile =
                 , style "border-radius" "0.5rem"
                 , style "grid-area" (gridAreaFromGP gp)
                 , onClick (TileClicked gp)
+                , onMouseOver (TileEntered gp)
                 ]
                 [ text (String.fromInt val)
                 ]
@@ -424,7 +503,7 @@ viewTile tile =
                         , style_ "place-content" "center"
                         , style_ "border-radius" "0.5rem"
                         ]
-                        []
+                        [ onClick (TileClicked gp) ]
                         [ text (String.fromInt val)
                         , div [ style "font-size" "0.5rem" ] [ text ("merged dy = " ++ String.fromInt mdy) ]
                         ]
@@ -463,7 +542,7 @@ viewTile tile =
                 , style_ "place-content" "center"
                 , style_ "border-radius" "0.5rem"
                 ]
-                []
+                [ onClick (TileClicked gp) ]
                 [ text (String.fromInt val)
                 , div [ style "font-size" "0.5rem" ] [ text ("drop dy = " ++ String.fromInt dy) ]
                 ]
@@ -476,6 +555,8 @@ viewConnectingTile gp val =
         , style "background-color" "#222"
         , style "place-content" "center"
         , style "border-radius" "0.5rem"
+        , onClick (TileClicked gp)
+        , onMouseOver (TileEntered gp)
         ]
         [ text (String.fromInt val)
         ]
