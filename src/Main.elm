@@ -421,7 +421,7 @@ viewTile tile =
                         , div [ style "font-size" "0.5rem" ] [ text ("merged dy = " ++ String.fromInt mdy) ]
                         ]
             in
-            div [ style "display" "contents" ]
+            viewContents
                 ([]
                     ++ (let
                             collapsingCells =
@@ -460,22 +460,9 @@ viewTile tile =
                 ]
 
 
-viewConnectingTile (( gx, gy ) as gp) val ( ngx, ngy ) =
-    div [ style "display" "contents" ]
-        [ Svg.svg
-            [ style "position" "absolute"
-            , style "display" "inline-block"
-            , SA.viewBox "-0.5 -0.5 4 4"
-            , style "inset" "0"
-            , SA.strokeWidth "0.05"
-            , style "z-index" "1"
-            ]
-            [ Svg.polyline
-                [ SA.points ([ gx, gy, ngx, ngy ] |> List.map String.fromInt |> String.join " ")
-                , SA.stroke "#999"
-                ]
-                []
-            ]
+viewConnectingTile gp val ngp =
+    viewContents
+        [ viewConnectingStroke (tmap toFloat gp) (tmap toFloat ngp)
         , div
             [ gridAreaFromGP gp
             , style "display" "grid"
@@ -488,7 +475,7 @@ viewConnectingTile (( gx, gy ) as gp) val ( ngx, ngy ) =
         ]
 
 
-viewCollapsingToTile i ( ( ( gx, gy ), val ), ( ngx, ngy ) ) =
+viewCollapsingToTile i ( ( ( gx, gy ) as gp, val ), ( ngx, ngy ) as ngp ) =
     let
         slideDuration =
             "calc(var(--unit-time))"
@@ -498,31 +485,8 @@ viewCollapsingToTile i ( ( ( gx, gy ), val ), ( ngx, ngy ) ) =
                 |> String.replace "$slideDuration" slideDuration
                 |> String.replace "$idx" (String.fromInt i)
     in
-    div [ style "display" "contents" ]
-        [ Svg.svg
-            [ style "position" "absolute"
-            , style "display" "inline-block"
-            , SA.viewBox "-0.5 -0.5 4 4"
-            , style "inset" "0"
-            , SA.strokeWidth "0.05"
-            , style "z-index" "1"
-            ]
-            [ Svg.polyline
-                [ replaceStyles
-                    [ "--duration:" ++ slideDuration
-                    , "--delay:" ++ slideDelay
-                    ]
-                , style "animation" "var(--duration) ease-out var(--delay) 1 normal both running stroke-vanish"
-                , SA.points
-                    ([ gx, gy, ngx, ngy ] |> List.map String.fromInt |> String.join " ")
-                , SA.stroke "#999"
-                , SA.pathLength "1"
-                , style "stroke-dasharray" "1"
-                , style "stroke-dashoffset" "-0.1"
-                , style "stroke-dashoffset" "0"
-                ]
-                []
-            ]
+    viewContents
+        [ viewCollapsingStroke slideDuration slideDelay (tmap toFloat gp) (tmap toFloat ngp)
         , div
             [ replaceStyles
                 [ "--diff-x:" ++ String.fromInt (ngx - gx)
@@ -540,6 +504,50 @@ viewCollapsingToTile i ( ( ( gx, gy ), val ), ( ngx, ngy ) ) =
             [ text (String.fromInt val)
             , div [ style "font-size" "0.5rem" ] [ text ("cidx = " ++ String.fromInt i) ]
             ]
+        ]
+
+
+viewConnectingStroke ( gx, gy ) ( ngx, ngy ) =
+    Svg.svg
+        [ style "position" "absolute"
+        , style "display" "inline-block"
+        , SA.viewBox "-0.5 -0.5 4 4"
+        , style "inset" "0"
+        , SA.strokeWidth "0.05"
+        , style "z-index" "1"
+        ]
+        [ Svg.polyline
+            [ SA.points ([ gx, gy, ngx, ngy ] |> List.map String.fromFloat |> String.join " ")
+            , SA.stroke "#999"
+            ]
+            []
+        ]
+
+
+viewCollapsingStroke slideDuration slideDelay ( gx, gy ) ( ngx, ngy ) =
+    Svg.svg
+        [ style "position" "absolute"
+        , style "display" "inline-block"
+        , SA.viewBox "-0.5 -0.5 4 4"
+        , style "inset" "0"
+        , SA.strokeWidth "0.05"
+        , style "z-index" "1"
+        ]
+        [ Svg.polyline
+            [ replaceStyles
+                [ "--duration:" ++ slideDuration
+                , "--delay:" ++ slideDelay
+                ]
+            , style "animation" "var(--duration) ease-out var(--delay) 1 normal both running stroke-vanish"
+            , SA.points
+                ([ gx, gy, ngx, ngy ] |> List.map String.fromFloat |> String.join " ")
+            , SA.stroke "#999"
+            , SA.pathLength "1"
+            , style "stroke-dasharray" "1"
+            , style "stroke-dashoffset" "-0.1"
+            , style "stroke-dashoffset" "0"
+            ]
+            []
         ]
 
 
@@ -567,6 +575,10 @@ eq =
     (==)
 
 
+tmap fn =
+    Tuple.mapBoth fn fn
+
+
 tmap2 fn ( a, b ) ( c, d ) =
     ( fn a c, fn b d )
 
@@ -585,6 +597,10 @@ replaceStyles styles =
 
 gridAreaFromGP ( x, y ) =
     style "grid-area" (String.fromInt (y + 1) ++ "/" ++ String.fromInt (x + 1))
+
+
+viewContents =
+    div [ style "display" "contents" ]
 
 
 padding =
