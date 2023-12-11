@@ -67,6 +67,7 @@ type Tile
     | MergedTile Cell Int ConnectionCells
     | DroppedTile Cell { dy : Int, dropTileDelay : Int }
     | ConnectingTile Cell { to : GP }
+    | LastConnectingTile Cell { to : ( Float, Float ) }
 
 
 type alias Tiles =
@@ -304,7 +305,7 @@ viewGame game =
                     lastCellGP =
                         cellGP lastCell
                  in
-                 [ ConnectingTile lastCell { to = lastCellGP } ]
+                 [ LastConnectingTile lastCell { to = ( 1.7, -0.3 ) } ]
                     ++ (List.foldl
                             (\c ( toGP, acc ) -> ( cellGP c, ConnectingTile c { to = toGP } :: acc ))
                             ( lastCellGP, [] )
@@ -392,7 +393,16 @@ viewTile tile =
                 ]
 
         ConnectingTile ( gp, val ) { to } ->
-            viewConnectingTile gp val to
+            viewContents
+                [ viewConnectingStroke (tmap toFloat gp) (tmap toFloat to)
+                , viewConnectingTile gp val
+                ]
+
+        LastConnectingTile ( gp, val ) { to } ->
+            viewContents
+                [ viewConnectingStroke (tmap toFloat gp) to
+                , viewConnectingTile gp val
+                ]
 
         MergedTile td mdy connectionCells ->
             let
@@ -460,18 +470,15 @@ viewTile tile =
                 ]
 
 
-viewConnectingTile gp val ngp =
-    viewContents
-        [ viewConnectingStroke (tmap toFloat gp) (tmap toFloat ngp)
-        , div
-            [ gridAreaFromGP gp
-            , style "display" "grid"
-            , style "background-color" "#222"
-            , style "place-content" "center"
-            , style "border-radius" "0.5rem"
-            ]
-            [ text (String.fromInt val)
-            ]
+viewConnectingTile gp val =
+    div
+        [ gridAreaFromGP gp
+        , style "display" "grid"
+        , style "background-color" "#222"
+        , style "place-content" "center"
+        , style "border-radius" "0.5rem"
+        ]
+        [ text (String.fromInt val)
         ]
 
 
