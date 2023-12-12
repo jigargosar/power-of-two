@@ -302,28 +302,10 @@ init () =
         ( initialCells, seed ) =
             Random.step randomInitialCells initialSeed
 
-        initialGame2 =
-            Start initialCells
-
         initialGame =
-            Start mockCells
-                -- [ 15, 14, 9, 5, 6, 11 ]
-                -- [ 13, 9 ]
-                |> withRollback (connectAll (NEL.map idxToGP ( 15, [ 14, 9, 5, 6, 11 ] )))
-                |> withRollback completeConnection
-
-        -- |> withRollback (connect ( 3, 2 ))
-        -- |> Debug.log "debug"
+            Start initialCells
     in
-    ( { ct = 0, game = initialGame2 }, Cmd.none )
-
-
-completedMockGame =
-    Start mockCells
-        -- [ 15, 14, 9, 5, 6, 11 ]
-        -- [ 13, 9 ]
-        |> withRollback (connectAll (NEL.map idxToGP ( 15, [ 14, 9, 5, 6, 11 ] )))
-        |> withRollback completeConnection
+    ( { ct = 0, game = initialGame }, Cmd.none )
 
 
 randomVal : Generator Val
@@ -339,11 +321,6 @@ randomInitialCells =
                 vals
                     |> List.indexedMap (\i val -> ( idxToGP (i + 1), val ))
             )
-
-
-mockCells =
-    List.range 1 16
-        |> List.map (\i -> ( idxToGP i, i ))
 
 
 idxToGP i =
@@ -415,11 +392,8 @@ view model =
         , div
             [ style "display" "flex"
             , style "gap" "1rem"
-
-            -- , style "width" "fit-content"
             ]
             [ viewKeyedContent (String.fromInt model.ct) (viewGame model.game)
-            , viewGame completedMockGame
             ]
         ]
 
