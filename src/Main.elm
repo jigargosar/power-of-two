@@ -10,6 +10,7 @@ import Json.Decode as JD
 import List.Extra as LE
 import List.Nonempty as NEL
 import Maybe.Extra as ME
+import Random exposing (Generator, Seed)
 import Svg exposing (Svg)
 import Svg.Attributes as SA
 
@@ -295,6 +296,15 @@ type alias Model =
 init : () -> ( Model, Cmd Msg )
 init () =
     let
+        initialSeed =
+            Random.initialSeed 0
+
+        ( initialCells, seed ) =
+            Random.step randomInitialCells initialSeed
+
+        initialGame2 =
+            Start initialCells
+
         initialGame =
             Start mockCells
                 -- [ 15, 14, 9, 5, 6, 11 ]
@@ -305,7 +315,7 @@ init () =
         -- |> withRollback (connect ( 3, 2 ))
         -- |> Debug.log "debug"
     in
-    ( { ct = 0, game = initialGame }, Cmd.none )
+    ( { ct = 0, game = initialGame2 }, Cmd.none )
 
 
 completedMockGame =
@@ -314,6 +324,21 @@ completedMockGame =
         -- [ 13, 9 ]
         |> withRollback (connectAll (NEL.map idxToGP ( 15, [ 14, 9, 5, 6, 11 ] )))
         |> withRollback completeConnection
+
+
+randomVal : Generator Val
+randomVal =
+    Random.uniform 2 [ 4, 8, 16 ]
+
+
+randomInitialCells : Generator Cells
+randomInitialCells =
+    Random.list 16 randomVal
+        |> Random.map
+            (\vals ->
+                vals
+                    |> List.indexedMap (\i val -> ( idxToGP (i + 1), val ))
+            )
 
 
 mockCells =
@@ -387,7 +412,12 @@ view model =
         ]
         [ globalStyles
         , text "V9 Implementing game from scratch"
-        , div [ style "display" "flex", style "gap" "1rem" ]
+        , div
+            [ style "display" "flex"
+            , style "gap" "1rem"
+
+            -- , style "width" "fit-content"
+            ]
             [ viewKeyedContent (String.fromInt model.ct) (viewGame model.game)
             , viewGame completedMockGame
             ]
@@ -426,7 +456,6 @@ viewGrid tiles =
     div
         [ style "display" "inline-block"
         , style "align-self" "start"
-        , style "overflow" "hidden"
         ]
         [ div
             [ style "background-color" "#333"
@@ -441,6 +470,7 @@ viewGrid tiles =
                 , style "padding" "0.5rem"
                 , style "gap" "0.5rem"
                 , style "font-size" "2rem"
+                , style "overflow" "hidden"
                 ]
                 (tiles |> List.map viewTile)
             ]
