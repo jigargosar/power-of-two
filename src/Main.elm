@@ -113,32 +113,6 @@ type Game
     | Connected Tiles
 
 
-connect : GP -> Game -> Maybe Game
-connect gp game =
-    case game of
-        Start cells ->
-            findCellAt gp cells
-                |> Maybe.map
-                    (\cell ->
-                        Connecting (initConnectionCells cell) (LE.remove cell cells)
-                    )
-
-        Connecting connectionCells cells ->
-            findCellAt gp cells
-                |> Maybe.andThen
-                    (\cell ->
-                        addConnectionCell cell connectionCells
-                            |> Maybe.map
-                                (\newConnectionCells ->
-                                    Connecting newConnectionCells (LE.remove cell cells)
-                                )
-                    )
-
-        Connected tiles ->
-            -- Just (Start (List.map tileCell tiles))
-            connect gp (Start (List.map tileCell tiles))
-
-
 areNeighbours : GP -> GP -> Bool
 areNeighbours a b =
     let
@@ -182,7 +156,7 @@ onTileEntered gp game =
             Nothing
 
 
-onTileClicked : GP -> Game -> Maybe Game
+onTileClicked : GP -> Game -> Maybe (Generator Game)
 onTileClicked gp game =
     case game of
         Start cells ->
@@ -190,20 +164,24 @@ onTileClicked gp game =
                 |> Maybe.map
                     (\cell ->
                         Connecting (initConnectionCells cell) (LE.remove cell cells)
+                            |> Random.constant
                     )
 
         Connecting connectionCells cells ->
             if lastConnectionCellGP connectionCells == gp && NEL.length connectionCells > 1 then
-                Just (Connected (completeConnection connectionCells cells))
+                completeConnection connectionCells cells
+                    |> Random.map (\tiles -> Connected tiles)
+                    |> Just
 
             else
-                Just (Start (NEL.toList connectionCells ++ cells))
+                Random.constant (Start (NEL.toList connectionCells ++ cells))
+                    |> Just
 
         Connected tiles ->
-            connect gp (Start (List.map tileCell tiles))
+            onTileClicked gp (Start (List.map tileCell tiles))
 
 
-completeConnection : ConnectionCells -> Cells -> Tiles
+completeConnection : ConnectionCells -> Cells -> Generator Tiles
 completeConnection connectionCells nonConnectionCells =
     let
         dropTileDelay =
@@ -240,10 +218,13 @@ completeConnection connectionCells nonConnectionCells =
         emptyGPs =
             allGPs |> removeAll filledGPs
     in
-    mergedTile
-        :: droppedAndStaticTiles
-        ++ createNewDroppedTiles dropTileDelay emptyGPs
-        ++ []
+    createNewDroppedTiles dropTileDelay emptyGPs
+        |> Random.map
+            (\newDroppedTiles ->
+                mergedTile
+                    :: droppedAndStaticTiles
+                    ++ newDroppedTiles
+            )
 
 
 removeAll aa =
@@ -268,6 +249,7 @@ lastConnectionCellGP ( ( gp, _ ), _ ) =
     gp
 
 
+createNewDroppedTiles : Int -> List GP -> Generator (List Tile)
 createNewDroppedTiles dropTileDelay emptyGPs =
     let
         maxYOfEmptyGPs =
@@ -276,15 +258,18 @@ createNewDroppedTiles dropTileDelay emptyGPs =
                 |> List.maximum
                 |> Maybe.withDefault 0
     in
-    emptyGPs
-        |> List.map
-            (\gp ->
-                DroppedTile ( gp, -99 ) { dy = maxYOfEmptyGPs + 1, dropTileDelay = dropTileDelay }
+    Random.list (List.length emptyGPs) randomVal
+        |> Random.map
+            (List.map2
+                (\gp val ->
+                    DroppedTile ( gp, val ) { dy = maxYOfEmptyGPs + 1, dropTileDelay = dropTileDelay }
+                )
+                emptyGPs
             )
 
 
 type alias Model =
-    { ct : Int, game : Game }
+    { ct : Int, game : Game, seed : Seed }
 
 
 init : () -> ( Model, Cmd Msg )
@@ -299,7 +284,7 @@ init () =
         initialGame =
             Start initialCells
     in
-    ( { ct = 0, game = initialGame }, Cmd.none )
+    ( { ct = 0, game = initialGame, seed = seed }, Cmd.none )
 
 
 randomVal : Generator Val
@@ -327,19 +312,6 @@ withRollback fn a =
     fn a |> Maybe.withDefault a
 
 
-connectAll : NEL GP -> Game -> Maybe Game
-connectAll ( h, t ) g =
-    connect h g
-        |> Maybe.andThen
-            (case NEL.fromList t of
-                Just nel ->
-                    connectAll nel
-
-                Nothing ->
-                    Just
-            )
-
-
 type Msg
     = TileClicked GP
     | TileEntered GP
@@ -356,8 +328,12 @@ update msg model =
     case msg of
         TileClicked gp ->
             ( case onTileClicked gp model.game of
-                Just game ->
-                    { model | ct = model.ct + 1, game = game }
+                Just gameGen ->
+                    let
+                        ( game, seed ) =
+                            Random.step gameGen model.seed
+                    in
+                    { model | ct = model.ct + 1, game = game, seed = seed }
 
                 _ ->
                     model
