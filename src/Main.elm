@@ -194,28 +194,17 @@ onTileClicked gp game =
 
         Connecting connectionCells cells ->
             if lastConnectionCellGP connectionCells == gp && NEL.length connectionCells > 1 then
-                Just (Connected (completeConnectionHelp connectionCells cells))
+                Just (Connected (completeConnection connectionCells cells))
 
             else
                 Just (Start (NEL.toList connectionCells ++ cells))
 
         Connected tiles ->
-            -- Just (Start (List.map tileCell tiles))
             connect gp (Start (List.map tileCell tiles))
 
 
-completeConnection : Game -> Maybe Game
-completeConnection game =
-    case game of
-        Connecting connectionCells cells ->
-            Just (Connected (completeConnectionHelp connectionCells cells))
-
-        _ ->
-            Nothing
-
-
-completeConnectionHelp : ConnectionCells -> Cells -> Tiles
-completeConnectionHelp connectionCells nonConnectionCells =
+completeConnection : ConnectionCells -> Cells -> Tiles
+completeConnection connectionCells nonConnectionCells =
     let
         dropTileDelay =
             NEL.length connectionCells
@@ -245,19 +234,24 @@ completeConnectionHelp connectionCells nonConnectionCells =
             in
             MergedTile ( gpMoveDownBy ct gp, 99 ) ct connectionCells
 
-        tileExistsAt gp =
-            List.any (tileGP >> eq gp) (mergedTile :: droppedAndStaticTiles)
+        filledGPs =
+            List.map tileGP (mergedTile :: droppedAndStaticTiles)
 
         emptyGPs =
-            NEL.toList connectionCells
-                ++ nonConnectionCells
-                |> List.map cellGP
-                |> reject tileExistsAt
+            allGPs |> removeAll filledGPs
     in
     mergedTile
         :: droppedAndStaticTiles
         ++ createNewDroppedTiles dropTileDelay emptyGPs
         ++ []
+
+
+removeAll aa =
+    reject (isMemberOf aa)
+
+
+isMemberOf =
+    flip List.member
 
 
 gpMoveDownBy dy ( x, y ) =
@@ -315,16 +309,18 @@ randomVal =
 
 randomInitialCells : Generator Cells
 randomInitialCells =
-    Random.list 16 randomVal
-        |> Random.map
-            (\vals ->
-                vals
-                    |> List.indexedMap (\i val -> ( idxToGP (i + 1), val ))
-            )
+    Random.list (List.length allGPs) randomVal
+        |> Random.map (LE.zip allGPs)
 
 
-idxToGP i =
-    ( modBy 4 (i - 1), (i - 1) // 4 )
+allGPs =
+    let
+        ( w, h ) =
+            ( 4, 4 )
+    in
+    LE.initialize
+        (w * h)
+        (\i -> ( modBy w i, i // h ))
 
 
 withRollback fn a =
