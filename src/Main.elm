@@ -29,6 +29,16 @@ type alias GP =
     ( Int, Int )
 
 
+allGPs =
+    let
+        ( w, h ) =
+            ( 4, 4 )
+    in
+    LE.initialize
+        (w * h)
+        (\i -> ( modBy w i, i // h ))
+
+
 gpNeighbours : GP -> GP -> Bool
 gpNeighbours a b =
     let
@@ -42,6 +52,11 @@ type alias Val =
     Int
 
 
+randomVal : Generator Val
+randomVal =
+    Random.uniform 2 [ 4, 8, 16 ]
+
+
 type alias Cell =
     ( GP, Val )
 
@@ -51,13 +66,19 @@ cellNeighbours a b =
     gpNeighbours (cellGP a) (cellGP b)
 
 
+cellGP : Cell -> GP
+cellGP =
+    Tuple.first
+
+
 type alias Cells =
     List Cell
 
 
-cellGP : Cell -> GP
-cellGP =
-    Tuple.first
+randomInitialCells : Generator Cells
+randomInitialCells =
+    Random.list (List.length allGPs) randomVal
+        |> Random.map (LE.zip allGPs)
 
 
 findCellAt : GP -> Cells -> Maybe Cell
@@ -112,32 +133,46 @@ type Game
     | ConnectionComplete Tiles
 
 
+randomGame : Generator Game
+randomGame =
+    randomInitialCells
+        |> Random.map (Running [])
+
+
 onTileClicked : GP -> Game -> Maybe (Generator Game)
 onTileClicked gp game =
     case game of
-        Running connected notConnected ->
-            case connected of
+        Running connecting notConnecting ->
+            case connecting of
+                -- not connecting
                 [] ->
-                    findCellAt gp notConnected
+                    -- start connecting
+                    findCellAt gp notConnecting
                         |> Maybe.map
                             (\cell ->
-                                Running [ cell ] (LE.remove cell notConnected)
+                                Running [ cell ] (LE.remove cell notConnecting)
                                     |> Random.constant
                             )
 
+                -- just started connecting
+                only :: [] ->
+                    -- reset connecting chain
+                    Running [] (connecting ++ notConnecting)
+                        |> Random.constant
+                        |> Just
+
+                -- can finish connecting cells or reset connecting chain
                 last :: secondLast :: previous ->
                     if cellGP last == gp then
-                        completeConnection last (secondLast :: previous) notConnected
+                        completeConnection last (secondLast :: previous) notConnecting
                             |> Random.map ConnectionComplete
                             |> Just
 
                     else
-                        Random.constant (Running [] (connected ++ notConnected))
+                        -- reset connecting chain
+                        Running [] (connecting ++ notConnecting)
+                            |> Random.constant
                             |> Just
-
-                only :: [] ->
-                    Random.constant (Running [] (connected ++ notConnected))
-                        |> Just
 
         ConnectionComplete tiles ->
             onTileClicked gp (Running [] (List.map tileCell tiles))
@@ -146,38 +181,43 @@ onTileClicked gp game =
 onTileEntered : GP -> Game -> Maybe Game
 onTileEntered gp game =
     case game of
-        Running connected notConnected ->
-            case connected of
+        Running connecting notConnecting ->
+            case connecting of
                 [] ->
                     Nothing
 
+                -- just started connecting
                 only :: [] ->
-                    findCellAt gp notConnected
+                    -- extend connecting chain
+                    findCellAt gp notConnecting
                         |> Maybe.andThen
                             (\cell ->
                                 if
                                     cellNeighbours cell only
                                     -- && val eq
                                 then
-                                    Just (Running (cell :: connected) (LE.remove cell notConnected))
+                                    Just (Running (cell :: connecting) (LE.remove cell notConnecting))
 
                                 else
                                     Nothing
                             )
 
+                -- can remove last connecting cell or extend chain
                 last :: secondLast :: previous ->
                     if cellGP secondLast == gp then
-                        Just (Running (secondLast :: previous) (last :: notConnected))
+                        -- remove last connecting cell
+                        Just (Running (secondLast :: previous) (last :: notConnecting))
 
                     else
-                        findCellAt gp notConnected
+                        -- attempt to extend connecting chain
+                        findCellAt gp notConnecting
                             |> Maybe.andThen
                                 (\cell ->
                                     if
                                         cellNeighbours cell last
                                         -- && val eq or next power of two
                                     then
-                                        Just (Running (cell :: connected) (LE.remove cell notConnected))
+                                        Just (Running (cell :: connecting) (LE.remove cell notConnecting))
 
                                     else
                                         Nothing
@@ -188,7 +228,7 @@ onTileEntered gp game =
 
 
 completeConnection : Cell -> Cells -> Cells -> Generator Tiles
-completeConnection last previous notConnected =
+completeConnection last previous notConnecting =
     let
         dropTileDelay =
             List.length previous + 1
@@ -197,7 +237,7 @@ completeConnection last previous notConnected =
             LE.count (\( ( hx, hy ), _ ) -> x == hx && y < hy) previous
 
         droppedAndStaticTiles =
-            notConnected
+            notConnecting
                 |> List.map
                     (\( gp, v ) ->
                         let
@@ -269,34 +309,10 @@ init () =
         initialSeed =
             Random.initialSeed 0
 
-        ( initialCells, seed ) =
-            Random.step randomInitialCells initialSeed
-
-        initialGame =
-            Running [] initialCells
+        ( initialGame, seed ) =
+            Random.step randomGame initialSeed
     in
     ( { ct = 0, game = initialGame, seed = seed }, Cmd.none )
-
-
-randomVal : Generator Val
-randomVal =
-    Random.uniform 2 [ 4, 8, 16 ]
-
-
-randomInitialCells : Generator Cells
-randomInitialCells =
-    Random.list (List.length allGPs) randomVal
-        |> Random.map (LE.zip allGPs)
-
-
-allGPs =
-    let
-        ( w, h ) =
-            ( 4, 4 )
-    in
-    LE.initialize
-        (w * h)
-        (\i -> ( modBy w i, i // h ))
 
 
 type Msg
@@ -359,25 +375,25 @@ view model =
 
 viewGame game =
     case game of
-        Running connected notConnected ->
-            (case connected of
+        Running connecting notConnecting ->
+            (case connecting of
                 [] ->
                     []
 
-                lastCell :: previousCells ->
+                last :: previous ->
                     let
                         lastCellGP =
-                            cellGP lastCell
+                            cellGP last
                     in
-                    LastConnectingTile lastCell { to = tmap toFloat lastCellGP }
+                    LastConnectingTile last { to = tmap toFloat lastCellGP }
                         :: (List.foldl
                                 (\c ( toGP, acc ) -> ( cellGP c, ConnectingTile c { to = toGP } :: acc ))
                                 ( lastCellGP, [] )
-                                previousCells
+                                previous
                                 |> Tuple.second
                            )
             )
-                ++ List.map StaticTile notConnected
+                ++ List.map StaticTile notConnecting
                 |> viewGrid
 
         ConnectionComplete tiles ->
