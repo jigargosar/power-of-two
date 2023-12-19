@@ -29,12 +29,26 @@ type alias GP =
     ( Int, Int )
 
 
+gpNeighbours : GP -> GP -> Bool
+gpNeighbours a b =
+    let
+        dxy =
+            tmap2 sub a b |> tmap abs
+    in
+    dxy == ( 1, 1 ) || dxy == ( 1, 0 ) || dxy == ( 0, 1 )
+
+
 type alias Val =
     Int
 
 
 type alias Cell =
     ( GP, Val )
+
+
+cellNeighbours : Cell -> Cell -> Bool
+cellNeighbours a b =
+    gpNeighbours (cellGP a) (cellGP b)
 
 
 type alias Cells =
@@ -51,61 +65,9 @@ findCellAt gp cells =
     LE.find (cellGP >> eq gp) cells
 
 
-type alias Connected =
-    { last : Cell, secondLast : Cell, previous : Cells }
-
-
-connectionCellsUncons : Connected -> ( Cell, Cells )
-connectionCellsUncons { last, secondLast, previous } =
-    ( last, secondLast :: previous )
-
-
-initConnected : Cell -> Cell -> Maybe Connected
-initConnected from to =
-    if
-        areNeighbours (cellGP from) (cellGP to)
-        -- && cellVal first == cellVal second
-    then
-        Just { last = to, secondLast = from, previous = [] }
-
-    else
-        Nothing
-
-
-addConnectionCell : Cell -> Connected -> Maybe Connected
-addConnectionCell cell { last, secondLast, previous } =
-    if
-        areNeighbours (cellGP cell) (cellGP last)
-        -- && (val eq or next power of two.
-    then
-        Just { last = cell, secondLast = last, previous = secondLast :: previous }
-
-    else
-        Nothing
-
-
-connectionCellsLength : Connected -> Int
-connectionCellsLength =
-    .previous >> List.length >> add 2
-
-
-add =
-    (+)
-
-
-connectedLastGP : Connected -> GP
-connectedLastGP =
-    .last >> cellGP
-
-
-connectedToList : Connected -> Cells
-connectedToList { last, secondLast, previous } =
-    last :: secondLast :: previous
-
-
 type Tile
     = StaticTile Cell
-    | MergedTile Cell Int Connected
+    | MergedTile Cell Int Cells
     | DroppedTile Cell { dy : Int, dropTileDelay : Int }
     | ConnectingTile Cell { to : GP }
     | LastConnectingTile Cell { to : ( Float, Float ) }
@@ -146,107 +108,101 @@ tileCell tile =
 
 
 type Game
-    = Start Cells
-    | ConnectionStarted Cell Cells
-    | Connecting Connected Cells
+    = Running Cells Cells
     | ConnectionComplete Tiles
-
-
-areNeighbours : GP -> GP -> Bool
-areNeighbours a b =
-    let
-        dxy =
-            tmap2 sub a b |> tmap abs
-    in
-    dxy == ( 1, 1 ) || dxy == ( 1, 0 ) || dxy == ( 0, 1 )
 
 
 onTileClicked : GP -> Game -> Maybe (Generator Game)
 onTileClicked gp game =
     case game of
-        Start cells ->
-            findCellAt gp cells
-                |> Maybe.map
-                    (\cell ->
-                        ConnectionStarted cell (LE.remove cell cells)
-                            |> Random.constant
-                    )
+        Running connected notConnected ->
+            case connected of
+                [] ->
+                    findCellAt gp notConnected
+                        |> Maybe.map
+                            (\cell ->
+                                Running [ cell ] (LE.remove cell notConnected)
+                                    |> Random.constant
+                            )
 
-        ConnectionStarted cell cells ->
-            Start (cell :: cells)
-                |> Random.constant
-                |> Just
+                last :: secondLast :: previous ->
+                    if cellGP last == gp then
+                        completeConnection last (secondLast :: previous) notConnected
+                            |> Random.map ConnectionComplete
+                            |> Just
 
-        Connecting connectionCells cells ->
-            if connectedLastGP connectionCells == gp then
-                completeConnection connectionCells cells
-                    |> Random.map (\tiles -> ConnectionComplete tiles)
-                    |> Just
+                    else
+                        Random.constant (Running [] (connected ++ notConnected))
+                            |> Just
 
-            else
-                Random.constant (Start (connectedToList connectionCells ++ cells))
-                    |> Just
+                only :: [] ->
+                    Random.constant (Running [] (connected ++ notConnected))
+                        |> Just
 
         ConnectionComplete tiles ->
-            onTileClicked gp (Start (List.map tileCell tiles))
+            onTileClicked gp (Running [] (List.map tileCell tiles))
 
 
 onTileEntered : GP -> Game -> Maybe Game
 onTileEntered gp game =
     case game of
-        Start _ ->
-            Nothing
+        Running connected notConnected ->
+            case connected of
+                [] ->
+                    Nothing
 
-        ConnectionStarted from cells ->
-            findCellAt gp cells
-                |> Maybe.andThen
-                    (\to ->
-                        initConnected from to
-                            |> Maybe.map (\connectionCells -> Connecting connectionCells (LE.remove to cells))
-                    )
+                only :: [] ->
+                    findCellAt gp notConnected
+                        |> Maybe.andThen
+                            (\cell ->
+                                if
+                                    cellNeighbours cell only
+                                    -- && val eq
+                                then
+                                    Just (Running (cell :: connected) (LE.remove cell notConnected))
 
-        Connecting connected notConnected ->
-            if cellGP connected.secondLast == gp then
-                Just (removeLastConnection connected notConnected)
+                                else
+                                    Nothing
+                            )
 
-            else
-                findCellAt gp notConnected
-                    |> Maybe.andThen
-                        (\cell ->
-                            addConnectionCell cell connected
-                                |> Maybe.map
-                                    (\newConnected ->
-                                        Connecting newConnected (LE.remove cell notConnected)
-                                    )
-                        )
+                last :: secondLast :: previous ->
+                    if cellGP secondLast == gp then
+                        Just (Running (secondLast :: previous) (last :: notConnected))
+
+                    else
+                        findCellAt gp notConnected
+                            |> Maybe.andThen
+                                (\cell ->
+                                    if
+                                        cellNeighbours cell last
+                                        -- && val eq or next power of two
+                                    then
+                                        Just (Running (cell :: connected) (LE.remove cell notConnected))
+
+                                    else
+                                        Nothing
+                                )
 
         ConnectionComplete _ ->
             Nothing
 
 
-removeLastConnection : Connected -> Cells -> Game
-removeLastConnection connected notConnected =
-    case connected.previous of
-        h :: t ->
-            Connecting { last = connected.secondLast, secondLast = h, previous = t } (connected.last :: notConnected)
-
-        [] ->
-            ConnectionStarted connected.secondLast (connected.last :: notConnected)
-
-
-completeConnection : Connected -> Cells -> Generator Tiles
-completeConnection connectionCells nonConnectionCells =
+completeConnection : Cell -> Cells -> Cells -> Generator Tiles
+completeConnection last previous notConnected =
     let
         dropTileDelay =
-            connectionCellsLength connectionCells
+            List.length previous + 1
+
+        holesBelow ( x, y ) =
+            LE.count (\( ( hx, hy ), _ ) -> x == hx && y < hy) previous
 
         droppedAndStaticTiles =
-            nonConnectionCells
+            notConnected
                 |> List.map
                     (\( gp, v ) ->
                         let
                             ct =
-                                countHolesBelow gp connectionCells
+                                holesBelow gp
                         in
                         if ct > 0 then
                             DroppedTile ( gpMoveDownBy ct gp, v ) { dy = ct, dropTileDelay = dropTileDelay }
@@ -258,12 +214,12 @@ completeConnection connectionCells nonConnectionCells =
         mergedTile =
             let
                 gp =
-                    connectedLastGP connectionCells
+                    cellGP last
 
                 ct =
-                    countHolesBelow gp connectionCells
+                    holesBelow gp
             in
-            MergedTile ( gpMoveDownBy ct gp, 99 ) ct connectionCells
+            MergedTile ( gpMoveDownBy ct gp, 99 ) ct (last :: previous)
 
         filledGPs =
             List.map tileGP (mergedTile :: droppedAndStaticTiles)
@@ -280,21 +236,8 @@ completeConnection connectionCells nonConnectionCells =
             )
 
 
-removeAll aa =
-    reject (isMemberOf aa)
-
-
-isMemberOf =
-    flip List.member
-
-
 gpMoveDownBy dy ( x, y ) =
     ( x, y + dy )
-
-
-countHolesBelow : GP -> Connected -> Int
-countHolesBelow ( x, y ) connected =
-    LE.count (\( ( hx, hy ), _ ) -> x == hx && y < hy) (connectedToList connected |> List.drop 1)
 
 
 createNewDroppedTiles : Int -> List GP -> Generator (List Tile)
@@ -330,7 +273,7 @@ init () =
             Random.step randomInitialCells initialSeed
 
         initialGame =
-            Start initialCells
+            Running [] initialCells
     in
     ( { ct = 0, game = initialGame, seed = seed }, Cmd.none )
 
@@ -354,10 +297,6 @@ allGPs =
     LE.initialize
         (w * h)
         (\i -> ( modBy w i, i // h ))
-
-
-withRollback fn a =
-    fn a |> Maybe.withDefault a
 
 
 type Msg
@@ -420,37 +359,26 @@ view model =
 
 viewGame game =
     case game of
-        Start cells ->
-            viewGrid (cells |> List.map StaticTile)
+        Running connected notConnected ->
+            (case connected of
+                [] ->
+                    []
 
-        ConnectionStarted lastCell cells ->
-            viewGrid
-                (let
-                    lastCellGP =
-                        cellGP lastCell
-                 in
-                 [ LastConnectingTile lastCell { to = tmap toFloat lastCellGP } ]
-                    ++ List.map StaticTile cells
-                )
-
-        Connecting connectionCells cells ->
-            viewGrid
-                (let
-                    ( lastCell, previousCells ) =
-                        connectionCellsUncons connectionCells
-
-                    lastCellGP =
-                        cellGP lastCell
-                 in
-                 [ LastConnectingTile lastCell { to = tmap toFloat lastCellGP } ]
-                    ++ (List.foldl
-                            (\c ( toGP, acc ) -> ( cellGP c, ConnectingTile c { to = toGP } :: acc ))
-                            ( lastCellGP, [] )
-                            previousCells
-                            |> Tuple.second
-                       )
-                    ++ List.map StaticTile cells
-                )
+                lastCell :: previousCells ->
+                    let
+                        lastCellGP =
+                            cellGP lastCell
+                    in
+                    LastConnectingTile lastCell { to = tmap toFloat lastCellGP }
+                        :: (List.foldl
+                                (\c ( toGP, acc ) -> ( cellGP c, ConnectingTile c { to = toGP } :: acc ))
+                                ( lastCellGP, [] )
+                                previousCells
+                                |> Tuple.second
+                           )
+            )
+                ++ List.map StaticTile notConnected
+                |> viewGrid
 
         ConnectionComplete tiles ->
             viewGrid tiles
@@ -515,6 +443,9 @@ viewTile tile =
 
         MergedTile td mdy connectionCells ->
             let
+                len =
+                    List.length connectionCells
+
                 viewNewMergedTile ( gp, val ) =
                     withStyles
                         div
@@ -522,7 +453,7 @@ viewTile tile =
                             [ "--diff-x:" ++ String.fromInt 0
                             , "--diff-y:" ++ String.fromInt mdy
                             , "--drop-tile-delay: calc($len * var(--unit-time))"
-                                |> String.replace "$len" (String.fromInt (connectionCellsLength connectionCells))
+                                |> String.replace "$len" (String.fromInt len)
                             , "--merge-appear-delay: calc(var(--drop-tile-delay) - var(--unit-time))"
                             ]
                         , style_ "animation"
@@ -546,7 +477,7 @@ viewTile tile =
                 ([]
                     ++ (let
                             collapsingCells =
-                                List.reverse (connectedToList connectionCells)
+                                List.reverse connectionCells
 
                             collapsingToCells =
                                 List.map2
@@ -681,6 +612,18 @@ style_ k v =
 
 
 -- UTILS
+
+
+add =
+    (+)
+
+
+removeAll aa =
+    reject (isMemberOf aa)
+
+
+isMemberOf =
+    flip List.member
 
 
 flip fn a b =
