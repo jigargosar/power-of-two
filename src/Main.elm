@@ -4,7 +4,7 @@ import Browser
 import Browser.Events as BE
 import Html exposing (Attribute, Html, button, div, span, text)
 import Html.Attributes as HA exposing (attribute, class, style)
-import Html.Events as HE exposing (onClick)
+import Html.Events as HE exposing (onClick, onMouseOver)
 import Html.Keyed
 import Json.Decode as JD
 import List.Extra as LE
@@ -113,24 +113,9 @@ tileGP tile =
             Debug.todo "impl"
 
 
-tileCell tile =
-    case tile of
-        StaticTile cell ->
-            cell
-
-        MergedTile cell _ _ ->
-            cell
-
-        DroppedTile cell _ ->
-            cell
-
-        _ ->
-            Debug.todo "impl"
-
-
 type Game
     = Running Cells Cells
-    | ConnectionComplete Tiles
+    | ConnectionComplete Cells Tiles
 
 
 randomGame : Generator Game
@@ -143,39 +128,43 @@ onTileClicked : GP -> Game -> Maybe (Generator Game)
 onTileClicked gp game =
     case game of
         Running connecting notConnecting ->
-            case connecting of
-                -- not connecting
-                [] ->
-                    -- start connecting
-                    findCellAt gp notConnecting
-                        |> Maybe.map
-                            (\cell ->
-                                Running [ cell ] (LE.remove cell notConnecting)
-                                    |> Random.constant
-                            )
+            onTileClickedHelp gp connecting notConnecting
 
-                -- just started connecting
-                only :: [] ->
-                    -- reset connecting chain
-                    Running [] (connecting ++ notConnecting)
-                        |> Random.constant
-                        |> Just
+        ConnectionComplete cells tiles ->
+            onTileClickedHelp gp [] cells
 
-                -- can finish connecting cells or reset connecting chain
-                last :: secondLast :: previous ->
-                    if cellGP last == gp then
-                        completeConnection last (secondLast :: previous) notConnecting
-                            |> Random.map ConnectionComplete
-                            |> Just
 
-                    else
-                        -- reset connecting chain
-                        Running [] (connecting ++ notConnecting)
+onTileClickedHelp : GP -> Cells -> Cells -> Maybe (Generator Game)
+onTileClickedHelp gp connecting notConnecting =
+    case connecting of
+        -- not connecting
+        [] ->
+            -- start connecting
+            findCellAt gp notConnecting
+                |> Maybe.map
+                    (\cell ->
+                        Running [ cell ] (LE.remove cell notConnecting)
                             |> Random.constant
-                            |> Just
+                    )
 
-        ConnectionComplete tiles ->
-            onTileClicked gp (Running [] (List.map tileCell tiles))
+        -- just started connecting
+        only :: [] ->
+            -- reset connecting chain
+            Running [] (connecting ++ notConnecting)
+                |> Random.constant
+                |> Just
+
+        -- may complete connecting
+        last :: secondLast :: previous ->
+            if cellGP last == gp then
+                finishConnecting last (secondLast :: previous) notConnecting
+                    |> Just
+
+            else
+                -- reset connecting chain
+                Running [] (connecting ++ notConnecting)
+                    |> Random.constant
+                    |> Just
 
 
 onTileEntered : GP -> Game -> Maybe Game
@@ -188,7 +177,7 @@ onTileEntered gp game =
 
                 -- just started connecting
                 only :: [] ->
-                    -- extend connecting chain
+                    -- attempt to extend connecting chain of single cell
                     findCellAt gp notConnecting
                         |> Maybe.andThen
                             (\cell ->
@@ -209,7 +198,7 @@ onTileEntered gp game =
                         Just (Running (secondLast :: previous) (last :: notConnecting))
 
                     else
-                        -- attempt to extend connecting chain
+                        -- attempt to extend connecting chain of more than one cell
                         findCellAt gp notConnecting
                             |> Maybe.andThen
                                 (\cell ->
@@ -223,12 +212,12 @@ onTileEntered gp game =
                                         Nothing
                                 )
 
-        ConnectionComplete _ ->
+        ConnectionComplete _ _ ->
             Nothing
 
 
-completeConnection : Cell -> Cells -> Cells -> Generator Tiles
-completeConnection last previous notConnecting =
+finishConnecting : Cell -> Cells -> Cells -> Generator Game
+finishConnecting last previous notConnecting =
     let
         dropTileDelay =
             List.length previous + 1
@@ -258,8 +247,11 @@ completeConnection last previous notConnecting =
 
                 ct =
                     holesBelow gp
+
+                val =
+                    mergeVal (last :: previous)
             in
-            MergedTile ( gpMoveDownBy ct gp, 99 ) ct (last :: previous)
+            MergedTile ( gpMoveDownBy ct gp, val ) ct (last :: previous)
 
         filledGPs =
             List.map tileGP (mergedTile :: droppedAndStaticTiles)
@@ -270,10 +262,38 @@ completeConnection last previous notConnecting =
     createNewDroppedTiles dropTileDelay emptyGPs
         |> Random.map
             (\newDroppedTiles ->
-                mergedTile
-                    :: droppedAndStaticTiles
-                    ++ newDroppedTiles
+                let
+                    tiles =
+                        mergedTile
+                            :: droppedAndStaticTiles
+                            ++ newDroppedTiles
+
+                    tileCell tile =
+                        case tile of
+                            StaticTile cell ->
+                                cell
+
+                            MergedTile cell _ _ ->
+                                cell
+
+                            DroppedTile cell _ ->
+                                cell
+
+                            _ ->
+                                Debug.todo "impl"
+                in
+                ConnectionComplete (List.map tileCell tiles) tiles
             )
+
+
+mergeVal cells =
+    cells
+        |> List.map Tuple.second
+        |> List.sum
+        |> toFloat
+        |> logBase 2
+        |> ceiling
+        |> (^) 2
 
 
 gpMoveDownBy dy ( x, y ) =
@@ -288,12 +308,15 @@ createNewDroppedTiles dropTileDelay emptyGPs =
                 |> List.map Tuple.second
                 |> List.maximum
                 |> Maybe.withDefault 0
+
+        dy =
+            maxYOfEmptyGPs + 1
     in
     Random.list (List.length emptyGPs) randomVal
         |> Random.map
             (List.map2
                 (\gp val ->
-                    DroppedTile ( gp, val ) { dy = maxYOfEmptyGPs + 1, dropTileDelay = dropTileDelay }
+                    DroppedTile ( gp, val ) { dy = dy, dropTileDelay = dropTileDelay }
                 )
                 emptyGPs
             )
@@ -374,33 +397,54 @@ view model =
 
 
 viewGame game =
+    div
+        [ style "display" "flex"
+        , style "flex-direction" "column"
+        , style "gap" "1rem"
+        ]
+        [ div [] [ text (gameMergeTileHint game) ]
+        , viewTiles (gameTiles game)
+        ]
+
+
+gameTiles game =
     case game of
         Running connecting notConnecting ->
-            (case connecting of
-                [] ->
-                    []
+            connectingTiles connecting ++ List.map StaticTile notConnecting
 
-                last :: previous ->
-                    let
-                        lastCellGP =
-                            cellGP last
-                    in
-                    LastConnectingTile last { to = tmap toFloat lastCellGP }
-                        :: (List.foldl
-                                (\c ( toGP, acc ) -> ( cellGP c, ConnectingTile c { to = toGP } :: acc ))
-                                ( lastCellGP, [] )
-                                previous
-                                |> Tuple.second
-                           )
-            )
-                ++ List.map StaticTile notConnecting
-                |> viewGrid
-
-        ConnectionComplete tiles ->
-            viewGrid tiles
+        ConnectionComplete _ tiles ->
+            tiles
 
 
-viewGrid tiles =
+connectingTiles connecting =
+    case connecting of
+        [] ->
+            []
+
+        last :: previous ->
+            let
+                lastCellGP =
+                    cellGP last
+            in
+            LastConnectingTile last { to = tmap toFloat lastCellGP }
+                :: (List.foldl
+                        (\c ( toGP, acc ) -> ( cellGP c, ConnectingTile c { to = toGP } :: acc ))
+                        ( lastCellGP, [] )
+                        previous
+                        |> Tuple.second
+                   )
+
+
+gameMergeTileHint game =
+    case game of
+        Running connecting notConnecting ->
+            "Merge Val = " ++ String.fromInt (mergeVal connecting)
+
+        ConnectionComplete _ tiles ->
+            "\u{00A0}"
+
+
+viewTiles tiles =
     div
         [ style "display" "inline-block"
         , style "align-self" "start"
@@ -423,11 +467,6 @@ viewGrid tiles =
                 (tiles |> List.map viewTile)
             ]
         ]
-
-
-onMouseOver msg =
-    -- HE.on "mouseover" (JD.succeed msg)
-    HE.onMouseOver msg
 
 
 viewTile tile =
@@ -486,7 +525,8 @@ viewTile tile =
                         ]
                         [ onClick (TileClicked gp) ]
                         [ text (String.fromInt val)
-                        , div [ style "font-size" "0.5rem" ] [ text ("merged dy = " ++ String.fromInt mdy) ]
+
+                        -- , div [ style "font-size" "0.5rem" ] [ text ("merged dy = " ++ String.fromInt mdy) ]
                         ]
             in
             viewContents
@@ -525,7 +565,8 @@ viewTile tile =
                 ]
                 [ onClick (TileClicked gp) ]
                 [ text (String.fromInt val)
-                , div [ style "font-size" "0.5rem" ] [ text ("drop dy = " ++ String.fromInt dy) ]
+
+                -- , div [ style "font-size" "0.5rem" ] [ text ("drop dy = " ++ String.fromInt dy) ]
                 ]
 
 
@@ -571,7 +612,8 @@ viewCollapsingToTile i ( ( ( gx, gy ) as gp, val ), ( ngx, ngy ) as ngp ) =
             ]
             []
             [ text (String.fromInt val)
-            , div [ style "font-size" "0.5rem" ] [ text ("cidx = " ++ String.fromInt i) ]
+
+            -- , div [ style "font-size" "0.5rem" ] [ text ("cidx = " ++ String.fromInt i) ]
             ]
         ]
 
@@ -620,10 +662,6 @@ viewCollapsingStroke slideDuration slideDelay ( gx, gy ) ( ngx, ngy ) =
             ]
             []
         ]
-
-
-style_ k v =
-    k ++ ":" ++ v
 
 
 
@@ -689,6 +727,10 @@ withStyles fn styles attrs =
 
 attrStyle styles =
     styles |> String.join ";" |> attribute "style"
+
+
+style_ k v =
+    k ++ ":" ++ v
 
 
 cssVars styles =
