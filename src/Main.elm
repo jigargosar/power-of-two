@@ -29,14 +29,22 @@ type alias GP =
     ( Int, Int )
 
 
+gridWidth =
+    5
+
+
+gridHeight =
+    8
+
+
 allGPs =
     let
         ( w, h ) =
-            ( 4, 4 )
+            ( gridWidth, gridHeight )
     in
     LE.initialize
         (w * h)
-        (\i -> ( modBy w i, i // h ))
+        (\i -> ( modBy w i, i // w ))
 
 
 gpNeighbours : GP -> GP -> Bool
@@ -75,10 +83,9 @@ type alias Cells =
     List Cell
 
 
-randomInitialCells : Generator Cells
-randomInitialCells =
-    Random.list (List.length allGPs) randomVal
-        |> Random.map (LE.zip allGPs)
+randomCells gps =
+    Random.list (List.length gps) randomVal
+        |> Random.map (LE.zip gps)
 
 
 findCellAt : GP -> Cells -> Maybe Cell
@@ -86,41 +93,14 @@ findCellAt gp cells =
     LE.find (cellGP >> eq gp) cells
 
 
-type Tile
-    = StaticTile Cell
-    | MergedTile Cell Int Cells
-    | DroppedTile Cell { dy : Int, dropTileDelay : Int }
-    | ConnectingTile Cell { to : GP }
-    | LastConnectingTile Cell { to : ( Float, Float ) }
-
-
-type alias Tiles =
-    List Tile
-
-
-tileGP tile =
-    case tile of
-        StaticTile ( gp, _ ) ->
-            gp
-
-        MergedTile ( gp, _ ) _ _ ->
-            gp
-
-        DroppedTile ( gp, _ ) _ ->
-            gp
-
-        _ ->
-            Debug.todo "impl"
-
-
 type Game
     = Running Cells Cells
-    | ConnectionComplete Cells Tiles
+    | ConnectionComplete_ ConnectionComplete
 
 
 randomGame : Generator Game
 randomGame =
-    randomInitialCells
+    randomCells allGPs
         |> Random.map (Running [])
 
 
@@ -130,7 +110,7 @@ onTileClicked gp game =
         Running connecting notConnecting ->
             onTileClickedHelp gp connecting notConnecting
 
-        ConnectionComplete cells tiles ->
+        ConnectionComplete_ { cells } ->
             onTileClickedHelp gp [] cells
 
 
@@ -212,8 +192,20 @@ onTileEntered gp game =
                                         Nothing
                                 )
 
-        ConnectionComplete _ _ ->
+        ConnectionComplete_ _ ->
             Nothing
+
+
+type alias CellView =
+    ( Cell, Int )
+
+
+type alias ConnectionComplete =
+    { dropped : List CellView
+    , merged : CellView
+    , collapsing : NEL Cell
+    , cells : Cells
+    }
 
 
 finishConnecting : Cell -> Cells -> Cells -> Generator Game
@@ -225,7 +217,7 @@ finishConnecting last previous notConnecting =
         holesBelow ( x, y ) =
             LE.count (\( ( hx, hy ), _ ) -> x == hx && y < hy) previous
 
-        droppedAndStaticTiles =
+        dropped =
             notConnecting
                 |> List.map
                     (\( gp, v ) ->
@@ -233,14 +225,10 @@ finishConnecting last previous notConnecting =
                             ct =
                                 holesBelow gp
                         in
-                        if ct > 0 then
-                            DroppedTile ( gpMoveDownBy ct gp, v ) { dy = ct, dropTileDelay = dropTileDelay }
-
-                        else
-                            StaticTile ( gp, v )
+                        ( ( gpMoveDownBy ct gp, v ), ct )
                     )
 
-        mergedTile =
+        merged =
             let
                 gp =
                     cellGP last
@@ -251,39 +239,46 @@ finishConnecting last previous notConnecting =
                 val =
                     mergeVal (last :: previous)
             in
-            MergedTile ( gpMoveDownBy ct gp, val ) ct (last :: previous)
+            ( ( gpMoveDownBy ct gp, val ), ct )
 
         filledGPs =
-            List.map tileGP (mergedTile :: droppedAndStaticTiles)
+            List.map (Tuple.first >> cellGP) (merged :: dropped)
 
         emptyGPs =
             allGPs |> removeAll filledGPs
     in
-    createNewDroppedTiles dropTileDelay emptyGPs
+    randomNewDroppedCellViews emptyGPs
         |> Random.map
-            (\newDroppedTiles ->
+            (\newDropped ->
                 let
-                    tiles =
-                        mergedTile
-                            :: droppedAndStaticTiles
-                            ++ newDroppedTiles
+                    allDropped =
+                        dropped ++ newDropped
 
-                    tileCell tile =
-                        case tile of
-                            StaticTile cell ->
-                                cell
-
-                            MergedTile cell _ _ ->
-                                cell
-
-                            DroppedTile cell _ ->
-                                cell
-
-                            _ ->
-                                Debug.todo "impl"
+                    cells =
+                        merged :: allDropped |> List.map Tuple.first
                 in
-                ConnectionComplete (List.map tileCell tiles) tiles
+                ConnectionComplete_
+                    { dropped = allDropped
+                    , merged = merged
+                    , collapsing = ( last, previous )
+                    , cells = cells
+                    }
             )
+
+
+randomNewDroppedCellViews emptyGPs =
+    let
+        maxYOfEmptyGPs =
+            emptyGPs
+                |> List.map Tuple.second
+                |> List.maximum
+                |> Maybe.withDefault 0
+
+        dy =
+            maxYOfEmptyGPs + 1
+    in
+    randomCells emptyGPs
+        |> Random.map (List.map (pairTo dy))
 
 
 mergeVal cells =
@@ -298,28 +293,6 @@ mergeVal cells =
 
 gpMoveDownBy dy ( x, y ) =
     ( x, y + dy )
-
-
-createNewDroppedTiles : Int -> List GP -> Generator (List Tile)
-createNewDroppedTiles dropTileDelay emptyGPs =
-    let
-        maxYOfEmptyGPs =
-            emptyGPs
-                |> List.map Tuple.second
-                |> List.maximum
-                |> Maybe.withDefault 0
-
-        dy =
-            maxYOfEmptyGPs + 1
-    in
-    Random.list (List.length emptyGPs) randomVal
-        |> Random.map
-            (List.map2
-                (\gp val ->
-                    DroppedTile ( gp, val ) { dy = dy, dropTileDelay = dropTileDelay }
-                )
-                emptyGPs
-            )
 
 
 type alias Model =
@@ -386,7 +359,6 @@ view model =
         , style "gap" "1rem"
         ]
         [ globalStyles
-        , text "V9 Implementing game from scratch"
         , div
             [ style "display" "flex"
             , style "gap" "1rem"
@@ -403,180 +375,64 @@ viewGame game =
         , style "gap" "1rem"
         ]
         [ div [] [ text (gameMergeTileHint game) ]
-        , viewTiles (gameTiles game)
+        , viewTiles game
         ]
 
 
-gameTiles game =
+viewTiles game =
     case game of
         Running connecting notConnecting ->
-            connectingTiles connecting ++ List.map StaticTile notConnecting
-
-        ConnectionComplete _ tiles ->
-            tiles
-
-
-connectingTiles connecting =
-    case connecting of
-        [] ->
-            []
-
-        last :: previous ->
-            let
-                lastCellGP =
-                    cellGP last
-            in
-            LastConnectingTile last { to = tmap toFloat lastCellGP }
-                :: (List.foldl
-                        (\c ( toGP, acc ) -> ( cellGP c, ConnectingTile c { to = toGP } :: acc ))
-                        ( lastCellGP, [] )
-                        previous
-                        |> Tuple.second
-                   )
-
-
-gameMergeTileHint game =
-    case game of
-        Running connecting notConnecting ->
-            "Merge Val = " ++ String.fromInt (mergeVal connecting)
-
-        ConnectionComplete _ tiles ->
-            "\u{00A0}"
-
-
-viewTiles tiles =
-    div
-        [ style "display" "inline-block"
-        , style "align-self" "start"
-        ]
-        [ div
-            [ style "background-color" "#333"
-            , style "border-radius" "0.5rem"
-            , style "position" "relative"
-            ]
-            [ text ""
-            , div
-                [ style "" ""
-                , style "display" "grid"
-                , style "grid-template" "repeat(4, 100px)/ repeat(4,100px)"
-                , style "padding" "0.5rem"
-                , style "gap" "0.5rem"
-                , style "font-size" "2rem"
-                , style "overflow" "hidden"
-                ]
-                (tiles |> List.map viewTile)
-            ]
-        ]
-
-
-viewTile tile =
-    case tile of
-        StaticTile ( gp, val ) ->
-            div
-                [ style "display" "grid"
-                , style "background-color" "#111"
-                , style "place-content" "center"
-                , style "border-radius" "0.5rem"
-                , style "grid-area" (gridAreaFromGP gp)
-                , onClick (TileClicked gp)
-                , onMouseOver (TileEntered gp)
-                ]
-                [ text (String.fromInt val)
-                ]
-
-        ConnectingTile ( gp, val ) { to } ->
-            viewContents
-                [ viewConnectingStroke (tmap toFloat gp) (tmap toFloat to)
-                , viewConnectingTile gp val
-                ]
-
-        LastConnectingTile ( gp, val ) { to } ->
-            viewContents
-                [ viewConnectingStroke (tmap toFloat gp) to
-                , viewConnectingTile gp val
-                ]
-
-        MergedTile td mdy connectionCells ->
-            let
-                len =
-                    List.length connectionCells
-
-                viewNewMergedTile ( gp, val ) =
-                    withStyles
-                        div
-                        [ cssVars
-                            [ "--diff-x:" ++ String.fromInt 0
-                            , "--diff-y:" ++ String.fromInt mdy
-                            , "--drop-tile-delay: calc($len * var(--unit-time))"
-                                |> String.replace "$len" (String.fromInt len)
-                            , "--merge-appear-delay: calc(var(--drop-tile-delay) - var(--unit-time))"
-                            ]
-                        , style_ "animation"
-                            ([ "var(--unit-time) ease-out var(--merge-appear-delay) 1 normal both running merged-appear"
-                             , "calc(var(--unit-time) * var(--diff-y)) ease-out var(--drop-tile-delay) 1 normal both running slide-from-diff"
-                             ]
-                                |> String.join ","
-                            )
-                        , style_ "grid-area" (gridAreaFromGP gp)
-                        , style_ "display" "grid"
-                        , style_ "background-color" "#111"
-                        , style_ "place-content" "center"
-                        , style_ "border-radius" "0.5rem"
-                        ]
-                        [ onClick (TileClicked gp) ]
-                        [ text (String.fromInt val)
-
-                        -- , div [ style "font-size" "0.5rem" ] [ text ("merged dy = " ++ String.fromInt mdy) ]
-                        ]
-            in
-            viewContents
-                ([]
-                    ++ (let
-                            collapsingCells =
-                                List.reverse connectionCells
-
-                            collapsingToCells =
-                                List.map2
-                                    (\( gp, v ) ( ngp, _ ) ->
-                                        ( ( gp, v ), ngp )
-                                    )
-                                    collapsingCells
-                                    (List.drop 1 collapsingCells ++ (LE.last collapsingCells |> Maybe.map List.singleton |> Maybe.withDefault []))
-                        in
-                        List.indexedMap viewCollapsingToTile collapsingToCells
-                       )
-                    ++ [ viewNewMergedTile td ]
+            gridContainer
+                (List.map viewConnecting (toConnectingView connecting)
+                    ++ List.map viewStatic notConnecting
                 )
 
-        DroppedTile ( gp, val ) { dy, dropTileDelay } ->
-            withStyles div
-                [ cssVars
-                    [ "--diff-x:" ++ String.fromInt 0
-                    , "--diff-y:" ++ String.fromInt dy
-                    , "--drop-tile-delay: calc($len * var(--unit-time))"
-                        |> String.replace "$len" (String.fromInt dropTileDelay)
-                    ]
-                , style_ "animation" "calc(var(--unit-time) * var(--diff-y)) ease-out var(--drop-tile-delay) 1 normal both running slide-from-diff"
-                , style_ "grid-area" (gridAreaFromGP gp)
-                , style_ "display" "grid"
-                , style_ "background-color" "#111"
-                , style_ "place-content" "center"
-                , style_ "border-radius" "0.5rem"
-                ]
-                [ onClick (TileClicked gp) ]
-                [ text (String.fromInt val)
-
-                -- , div [ style "font-size" "0.5rem" ] [ text ("drop dy = " ++ String.fromInt dy) ]
-                ]
+        ConnectionComplete_ { merged, collapsing, dropped } ->
+            let
+                dropTileDelay =
+                    NEL.length collapsing
+            in
+            gridContainer
+                (viewMerged dropTileDelay merged
+                    :: viewCollapsing collapsing
+                    ++ List.map (viewDropped dropTileDelay) dropped
+                )
 
 
-viewConnectingTile gp val =
+viewMerged dropTileDelay ( ( gp, val ), dy ) =
+    withStyles
+        div
+        [ cssVars
+            [ "--diff-x:" ++ String.fromInt 0
+            , "--diff-y:" ++ String.fromInt dy
+            , "--drop-tile-delay: calc($len * var(--unit-time))"
+                |> String.replace "$len" (String.fromInt dropTileDelay)
+            , "--merge-appear-delay: calc(var(--drop-tile-delay) - var(--unit-time))"
+            ]
+        , style_ "animation"
+            ([ "var(--unit-time) ease-out var(--merge-appear-delay) 1 normal both running merged-appear"
+             , "calc(var(--unit-time) * var(--diff-y)) ease-out var(--drop-tile-delay) 1 normal both running slide-from-diff"
+             ]
+                |> String.join ","
+            )
+        , style_ "grid-area" (gridAreaFromGP gp)
+        , style_ "display" "grid"
+        , style_ "background-color" "#111"
+        , style_ "place-content" "center"
+        , style_ "border-radius" "0.5rem"
+        ]
+        [ onClick (TileClicked gp) ]
+        [ text (String.fromInt val)
+        ]
+
+
+viewStatic ( gp, val ) =
     div
-        [ style "grid-area" (gridAreaFromGP gp)
-        , style "display" "grid"
-        , style "background-color" "#222"
+        [ style "display" "grid"
+        , style "background-color" "#111"
         , style "place-content" "center"
         , style "border-radius" "0.5rem"
+        , style "grid-area" (gridAreaFromGP gp)
         , onClick (TileClicked gp)
         , onMouseOver (TileEntered gp)
         ]
@@ -584,7 +440,40 @@ viewConnectingTile gp val =
         ]
 
 
-viewCollapsingToTile i ( ( ( gx, gy ) as gp, val ), ( ngx, ngy ) as ngp ) =
+viewDropped dropTileDelay ( ( gp, val ), dy ) =
+    withStyles div
+        [ cssVars
+            [ "--diff-x:" ++ String.fromInt 0
+            , "--diff-y:" ++ String.fromInt dy
+            , "--drop-tile-delay: calc($len * var(--unit-time))"
+                |> String.replace "$len" (String.fromInt dropTileDelay)
+            ]
+        , style_ "animation" "calc(var(--unit-time) * var(--diff-y)) ease-out var(--drop-tile-delay) 1 normal both running slide-from-diff"
+        , style_ "grid-area" (gridAreaFromGP gp)
+        , style_ "display" "grid"
+        , style_ "background-color" "#111"
+        , style_ "place-content" "center"
+        , style_ "border-radius" "0.5rem"
+        ]
+        [ onClick (TileClicked gp) ]
+        [ text (String.fromInt val)
+        ]
+
+
+viewCollapsing collapsing =
+    let
+        collapsingList =
+            NEL.toList collapsing
+
+        toGPs =
+            cellGP (NEL.head collapsing) :: List.map cellGP collapsingList
+    in
+    LE.zip collapsingList toGPs
+        |> List.reverse
+        |> List.indexedMap viewCollapsingHelp
+
+
+viewCollapsingHelp i ( ( ( gx, gy ) as gp, val ), ( ngx, ngy ) as ngp ) =
     let
         slideDuration =
             "calc(var(--unit-time))"
@@ -618,6 +507,79 @@ viewCollapsingToTile i ( ( ( gx, gy ) as gp, val ), ( ngx, ngy ) as ngp ) =
         ]
 
 
+toConnectingView connecting =
+    case connecting of
+        [] ->
+            []
+
+        last :: previous ->
+            let
+                toPts =
+                    tmap toFloat (cellGP last)
+                        :: List.map (cellGP >> tmap toFloat) connecting
+            in
+            LE.zip connecting toPts
+
+
+viewConnecting ( ( gp, val ), to ) =
+    viewContents
+        [ viewConnectingStroke (tmap toFloat gp) to
+        , viewConnectingTile gp val
+        ]
+
+
+gameMergeTileHint game =
+    case game of
+        Running connecting notConnecting ->
+            "Merge Val = " ++ String.fromInt (mergeVal connecting)
+
+        ConnectionComplete_ _ ->
+            "\u{00A0}"
+
+
+gridContainer children =
+    div
+        [ style "display" "inline-block"
+        , style "align-self" "start"
+        ]
+        [ div
+            [ style "background-color" "#333"
+            , style "border-radius" "0.5rem"
+            , style "position" "relative"
+            ]
+            [ text ""
+            , div
+                [ style "" ""
+                , style "display" "grid"
+                , style "grid-template"
+                    ("repeat($rows, 50px)/ repeat($columns,50px)"
+                        |> String.replace "$rows" (String.fromInt gridHeight)
+                        |> String.replace "$columns" (String.fromInt gridWidth)
+                    )
+                , style "padding" "0.5rem"
+                , style "gap" "0.5rem"
+                , style "font-size" "1rem"
+                , style "overflow" "hidden"
+                ]
+                children
+            ]
+        ]
+
+
+viewConnectingTile gp val =
+    div
+        [ style "grid-area" (gridAreaFromGP gp)
+        , style "display" "grid"
+        , style "background-color" "#222"
+        , style "place-content" "center"
+        , style "border-radius" "0.5rem"
+        , onClick (TileClicked gp)
+        , onMouseOver (TileEntered gp)
+        ]
+        [ text (String.fromInt val)
+        ]
+
+
 viewConnectingStroke ( gx, gy ) ( ngx, ngy ) =
     Svg.svg
         [ style "position" "absolute"
@@ -625,7 +587,7 @@ viewConnectingStroke ( gx, gy ) ( ngx, ngy ) =
         , style "inset" "0"
         , style "z-index" "1"
         , style "pointer-events" "none"
-        , SA.viewBox "-0.5 -0.5 4 4"
+        , SA.viewBox viewBoxValue
         , SA.strokeWidth "0.05"
         ]
         [ Svg.polyline
@@ -636,6 +598,10 @@ viewConnectingStroke ( gx, gy ) ( ngx, ngy ) =
         ]
 
 
+viewBoxValue =
+    "-0.5 -0.5 " ++ String.fromInt gridWidth ++ " " ++ String.fromInt gridHeight
+
+
 viewCollapsingStroke slideDuration slideDelay ( gx, gy ) ( ngx, ngy ) =
     Svg.svg
         [ style "position" "absolute"
@@ -643,7 +609,7 @@ viewCollapsingStroke slideDuration slideDelay ( gx, gy ) ( ngx, ngy ) =
         , style "inset" "0"
         , style "z-index" "1"
         , style "pointer-events" "none"
-        , SA.viewBox "-0.5 -0.5 4 4"
+        , SA.viewBox viewBoxValue
         , SA.strokeWidth "0.05"
         ]
         [ withStyles Svg.polyline
@@ -682,6 +648,10 @@ isMemberOf =
 
 flip fn a b =
     fn b a
+
+
+pairTo =
+    flip Tuple.pair
 
 
 memberOf =
