@@ -379,11 +379,20 @@ viewGame game =
         ]
 
 
+gameMergeTileHint game =
+    case game of
+        Running connecting notConnecting ->
+            "Merge Val = " ++ String.fromInt (mergeVal connecting)
+
+        ConnectionComplete_ _ ->
+            "\u{00A0}"
+
+
 viewTiles game =
     case game of
         Running connecting notConnecting ->
             gridContainer
-                (List.map viewConnecting (toConnectingView connecting)
+                (viewConnecting connecting
                     ++ List.map viewStatic notConnecting
                 )
 
@@ -399,29 +408,85 @@ viewTiles game =
                 )
 
 
-viewMerged dropTileDelay ( ( gp, val ), dy ) =
-    withStyles
-        div
-        [ cssVars
-            [ "--diff-x:" ++ String.fromInt 0
-            , "--diff-y:" ++ String.fromInt dy
-            , "--drop-tile-delay: calc($len * var(--unit-time))"
-                |> String.replace "$len" (String.fromInt dropTileDelay)
-            , "--merge-appear-delay: calc(var(--drop-tile-delay) - var(--unit-time))"
-            ]
-        , style_ "animation"
-            ([ "var(--unit-time) ease-out var(--merge-appear-delay) 1 normal both running merged-appear"
-             , "calc(var(--unit-time) * var(--diff-y)) ease-out var(--drop-tile-delay) 1 normal both running slide-from-diff"
-             ]
-                |> String.join ","
-            )
-        , style_ "grid-area" (gridAreaFromGP gp)
-        , style_ "display" "grid"
-        , style_ "background-color" "#111"
-        , style_ "place-content" "center"
-        , style_ "border-radius" "0.5rem"
+gridContainer children =
+    div
+        [ style "display" "inline-block"
+        , style "align-self" "start"
         ]
-        [ onClick (TileClicked gp) ]
+        [ div
+            [ style "background-color" "#333"
+            , style "border-radius" "0.5rem"
+            , style "position" "relative"
+            ]
+            [ text ""
+            , div
+                [ style "" ""
+                , style "display" "grid"
+                , style "grid-template"
+                    ("repeat($rows, 50px)/ repeat($columns,50px)"
+                        |> String.replace "$rows" (String.fromInt gridHeight)
+                        |> String.replace "$columns" (String.fromInt gridWidth)
+                    )
+                , style "padding" "0.5rem"
+                , style "gap" "0.5rem"
+                , style "font-size" "1rem"
+                , style "overflow" "hidden"
+                ]
+                children
+            ]
+        ]
+
+
+viewConnecting connecting =
+    case connecting of
+        [] ->
+            []
+
+        last :: previous ->
+            let
+                toPts =
+                    tmap toFloat (cellGP last)
+                        :: List.map (cellGP >> tmap toFloat) connecting
+            in
+            LE.zip connecting toPts
+                |> List.map viewConnectingHelp
+
+
+viewConnectingHelp ( ( gp, val ), to ) =
+    viewContents
+        [ viewConnectingStroke (tmap toFloat gp) to
+        , viewConnectingTile gp val
+        ]
+
+
+viewConnectingStroke ( gx, gy ) ( ngx, ngy ) =
+    Svg.svg
+        [ style "position" "absolute"
+        , style "display" "inline-block"
+        , style "inset" "0"
+        , style "z-index" "1"
+        , style "pointer-events" "none"
+        , SA.viewBox viewBoxValue
+        , SA.strokeWidth "0.05"
+        ]
+        [ Svg.polyline
+            [ SA.points ([ gx, gy, ngx, ngy ] |> List.map String.fromFloat |> String.join " ")
+            , SA.stroke "#999"
+            ]
+            []
+        ]
+
+
+viewConnectingTile gp val =
+    div
+        [ style "grid-area" (gridAreaFromGP gp)
+        , style "display" "grid"
+        , style "background-color" "#222"
+        , style "place-content" "center"
+        , style "border-radius" "0.5rem"
+        , onClick (TileClicked gp)
+        , onMouseOver (TileEntered gp)
+        ]
         [ text (String.fromInt val)
         ]
 
@@ -473,7 +538,7 @@ viewCollapsing collapsing =
         |> List.indexedMap viewCollapsingHelp
 
 
-viewCollapsingHelp i ( ( ( gx, gy ) as gp, val ), ( ngx, ngy ) as ngp ) =
+viewCollapsingHelp i ( ( gp, val ), ngp ) =
     let
         slideDuration =
             "calc(var(--unit-time))"
@@ -485,124 +550,11 @@ viewCollapsingHelp i ( ( ( gx, gy ) as gp, val ), ( ngx, ngy ) as ngp ) =
     in
     viewContents
         [ viewCollapsingStroke slideDuration slideDelay (tmap toFloat gp) (tmap toFloat ngp)
-        , withStyles div
-            [ cssVars
-                [ "--diff-x:" ++ String.fromInt (ngx - gx)
-                , "--diff-y:" ++ String.fromInt (ngy - gy)
-                , "--duration:" ++ slideDuration
-                , "--delay:" ++ slideDelay
-                ]
-            , style_ "animation" "var(--duration) ease-out var(--delay) 1 normal both running slide-to-diff-and-vanish"
-            , style_ "grid-area" (gridAreaFromGP ( gx, gy ))
-            , style_ "display" "grid"
-            , style_ "background-color" "#111"
-            , style_ "place-content" "center"
-            , style_ "border-radius" "0.5rem"
-            ]
-            []
-            [ text (String.fromInt val)
-
-            -- , div [ style "font-size" "0.5rem" ] [ text ("cidx = " ++ String.fromInt i) ]
-            ]
+        , viewCollapsingTile slideDuration slideDelay gp val ngp
         ]
 
 
-toConnectingView connecting =
-    case connecting of
-        [] ->
-            []
-
-        last :: previous ->
-            let
-                toPts =
-                    tmap toFloat (cellGP last)
-                        :: List.map (cellGP >> tmap toFloat) connecting
-            in
-            LE.zip connecting toPts
-
-
-viewConnecting ( ( gp, val ), to ) =
-    viewContents
-        [ viewConnectingStroke (tmap toFloat gp) to
-        , viewConnectingTile gp val
-        ]
-
-
-gameMergeTileHint game =
-    case game of
-        Running connecting notConnecting ->
-            "Merge Val = " ++ String.fromInt (mergeVal connecting)
-
-        ConnectionComplete_ _ ->
-            "\u{00A0}"
-
-
-gridContainer children =
-    div
-        [ style "display" "inline-block"
-        , style "align-self" "start"
-        ]
-        [ div
-            [ style "background-color" "#333"
-            , style "border-radius" "0.5rem"
-            , style "position" "relative"
-            ]
-            [ text ""
-            , div
-                [ style "" ""
-                , style "display" "grid"
-                , style "grid-template"
-                    ("repeat($rows, 50px)/ repeat($columns,50px)"
-                        |> String.replace "$rows" (String.fromInt gridHeight)
-                        |> String.replace "$columns" (String.fromInt gridWidth)
-                    )
-                , style "padding" "0.5rem"
-                , style "gap" "0.5rem"
-                , style "font-size" "1rem"
-                , style "overflow" "hidden"
-                ]
-                children
-            ]
-        ]
-
-
-viewConnectingTile gp val =
-    div
-        [ style "grid-area" (gridAreaFromGP gp)
-        , style "display" "grid"
-        , style "background-color" "#222"
-        , style "place-content" "center"
-        , style "border-radius" "0.5rem"
-        , onClick (TileClicked gp)
-        , onMouseOver (TileEntered gp)
-        ]
-        [ text (String.fromInt val)
-        ]
-
-
-viewConnectingStroke ( gx, gy ) ( ngx, ngy ) =
-    Svg.svg
-        [ style "position" "absolute"
-        , style "display" "inline-block"
-        , style "inset" "0"
-        , style "z-index" "1"
-        , style "pointer-events" "none"
-        , SA.viewBox viewBoxValue
-        , SA.strokeWidth "0.05"
-        ]
-        [ Svg.polyline
-            [ SA.points ([ gx, gy, ngx, ngy ] |> List.map String.fromFloat |> String.join " ")
-            , SA.stroke "#999"
-            ]
-            []
-        ]
-
-
-viewBoxValue =
-    "-0.5 -0.5 " ++ String.fromInt gridWidth ++ " " ++ String.fromInt gridHeight
-
-
-viewCollapsingStroke slideDuration slideDelay ( gx, gy ) ( ngx, ngy ) =
+viewCollapsingStroke duration delay ( gx, gy ) ( ngx, ngy ) =
     Svg.svg
         [ style "position" "absolute"
         , style "display" "inline-block"
@@ -613,11 +565,11 @@ viewCollapsingStroke slideDuration slideDelay ( gx, gy ) ( ngx, ngy ) =
         , SA.strokeWidth "0.05"
         ]
         [ withStyles Svg.polyline
-            [ cssVars
-                [ "--duration:" ++ slideDuration
-                , "--delay:" ++ slideDelay
-                ]
-            , style_ "animation" "var(--duration) ease-out var(--delay) 1 normal both running stroke-vanish"
+            [ style_ "animation"
+                ("$duration ease-out $delay 1 normal both running stroke-vanish"
+                    |> String.replace "$duration" duration
+                    |> String.replace "$delay" delay
+                )
             , style_ "stroke-dasharray" "1"
             , style_ "stroke-dashoffset" "-0.1"
             , style_ "stroke-dashoffset" "0"
@@ -628,6 +580,59 @@ viewCollapsingStroke slideDuration slideDelay ( gx, gy ) ( ngx, ngy ) =
             ]
             []
         ]
+
+
+viewCollapsingTile duration delay ( gx, gy ) val ( ngx, ngy ) =
+    withStyles div
+        [ cssVars
+            [ "--diff-x:" ++ String.fromInt (ngx - gx)
+            , "--diff-y:" ++ String.fromInt (ngy - gy)
+            ]
+        , style_ "animation"
+            ("$duration ease-out $delay 1 normal both running slide-to-diff-and-vanish"
+                |> String.replace "$duration" duration
+                |> String.replace "$delay" delay
+            )
+        , style_ "grid-area" (gridAreaFromGP ( gx, gy ))
+        , style_ "display" "grid"
+        , style_ "background-color" "#111"
+        , style_ "place-content" "center"
+        , style_ "border-radius" "0.5rem"
+        ]
+        []
+        [ text (String.fromInt val)
+        ]
+
+
+viewMerged dropTileDelay ( ( gp, val ), dy ) =
+    withStyles
+        div
+        [ cssVars
+            [ "--diff-x:" ++ String.fromInt 0
+            , "--diff-y:" ++ String.fromInt dy
+            , "--drop-tile-delay: calc($len * var(--unit-time))"
+                |> String.replace "$len" (String.fromInt dropTileDelay)
+            , "--merge-appear-delay: calc(var(--drop-tile-delay) - var(--unit-time))"
+            ]
+        , style_ "animation"
+            ([ "var(--unit-time) ease-out var(--merge-appear-delay) 1 normal both running merged-appear"
+             , "calc(var(--unit-time) * var(--diff-y)) ease-out var(--drop-tile-delay) 1 normal both running slide-from-diff"
+             ]
+                |> String.join ","
+            )
+        , style_ "grid-area" (gridAreaFromGP gp)
+        , style_ "display" "grid"
+        , style_ "background-color" "#111"
+        , style_ "place-content" "center"
+        , style_ "border-radius" "0.5rem"
+        ]
+        [ onClick (TileClicked gp) ]
+        [ text (String.fromInt val)
+        ]
+
+
+viewBoxValue =
+    "-0.5 -0.5 " ++ String.fromInt gridWidth ++ " " ++ String.fromInt gridHeight
 
 
 
